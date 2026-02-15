@@ -1,6 +1,6 @@
 # Saboteur Replica (Python / pygame)
 
-A full-featured **Saboteur-style ninja action game** implemented in Python.
+A full-featured **Saboteur-style ninja action game** implemented in Python with handcrafted pixel-art sprites and a validated traversable map path.
 
 This version now includes:
 - Multi-zone compound map (7 connected zones)
@@ -40,39 +40,8 @@ python game.py
 
 You fail if health reaches 0 or the timer expires.
 
-## Build installers
 
-### Windows (.exe + installer)
-On Windows with PowerShell:
+## Playability checks
 
-```powershell
-./scripts/build_windows.ps1
-```
-
-This creates:
-- `dist/Saboteur/Saboteur.exe`
-- `dist/Saboteur-Installer.exe` (if Inno Setup 6 is installed)
-
-### macOS (.app + .dmg)
-On macOS:
-
-```bash
-./scripts/build_macos.sh
-```
-
-This creates:
-- `dist/Saboteur.app`
-- `dist/Saboteur.dmg` (if `create-dmg` is installed)
-
-### Android (.apk)
-On Linux/macOS with Android dependencies:
-
-```bash
-./scripts/build_android.sh
-```
-
-This creates a debug APK in `bin/`.
-
-### CI build artifacts
-A GitHub Actions workflow is included at `.github/workflows/build-installers.yml`.
-It builds Windows, macOS, and Android artifacts and uploads them to workflow artifacts.
+- The project includes an automated level-connectivity test that validates there is a route from the spawn side to extraction.
+- Core simulation logic is covered by unit tests for collision and bomb mission rules.

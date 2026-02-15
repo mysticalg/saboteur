@@ -1,15 +1,8 @@
-"""Saboteur Tribute: a feature-rich side-scrolling ninja action game in pygame.
-
-This game is a respectful recreation inspired by ZX Spectrum Saboteur mechanics:
-- multi-zone compound layout
-- stealth/action enemies (ninjas + guards + dogs)
-- collectible mission items
-- melee fighting moves + thrown shuriken
-- timer-driven extraction objective
-"""
+"""Saboteur Tribute with pixel-art sprites and validated playable layout."""
 
 from __future__ import annotations
 
+import math
 import random
 import sys
 from dataclasses import dataclass
@@ -17,20 +10,20 @@ from dataclasses import dataclass
 import pygame
 
 from core import JUMP_VELOCITY, RUN_SPEED, Actor, Bomb, GameRules, PlayerState, Rect, WorldPhysics
+from level_data import FLOOR_H, SCREEN_H, SCREEN_W, WORLD_W, build_level
 
-SCREEN_W, SCREEN_H = 1200, 720
-WORLD_W = 4200
-FLOOR_H = 44
-
-BG = (8, 10, 20)
-PLATFORM = (56, 66, 90)
-WHITE = (236, 236, 236)
-RED = (210, 70, 90)
-GREEN = (60, 205, 150)
-YELLOW = (245, 220, 80)
-BLUE = (80, 140, 230)
-ORANGE = (245, 155, 85)
-CYAN = (100, 220, 220)
+SKY = (12, 16, 30)
+NEAR_BG = (24, 34, 58)
+MID_BG = (36, 52, 82)
+PLATFORM_TOP = (115, 123, 150)
+PLATFORM_SIDE = (72, 79, 104)
+WHITE = (240, 240, 240)
+YELLOW = (245, 220, 92)
+RED = (214, 84, 102)
+GREEN = (76, 206, 150)
+BLUE = (90, 140, 235)
+CYAN = (98, 225, 225)
+ORANGE = (245, 160, 90)
 
 
 @dataclass
@@ -81,76 +74,100 @@ class Pickup:
     taken: bool = False
 
 
+
+
+class SpriteBank:
+    def __init__(self) -> None:
+        self.player = self._make_humanoid((226, 226, 236), (40, 42, 55), band=(200, 44, 44))
+        self.guard = self._make_humanoid((228, 86, 100), (48, 26, 32), band=(70, 70, 70))
+        self.ninja = self._make_humanoid((50, 50, 56), (20, 20, 24), band=(220, 210, 120))
+        self.dog = self._make_dog((162, 122, 82), (78, 52, 34))
+        self.terminal = self._make_terminal()
+        self.shuriken = self._make_shuriken()
+
+    def _make_humanoid(
+        self, body: tuple[int, int, int], trim: tuple[int, int, int], band: tuple[int, int, int]
+    ) -> pygame.Surface:
+        surf = pygame.Surface((32, 64), pygame.SRCALPHA)
+        pygame.draw.rect(surf, body, pygame.Rect(9, 2, 14, 14), border_radius=4)
+        pygame.draw.rect(surf, body, pygame.Rect(6, 16, 20, 28), border_radius=5)
+        pygame.draw.rect(surf, trim, pygame.Rect(8, 46, 7, 16), border_radius=3)
+        pygame.draw.rect(surf, trim, pygame.Rect(17, 46, 7, 16), border_radius=3)
+        pygame.draw.rect(surf, band, pygame.Rect(6, 27, 20, 4))
+        pygame.draw.rect(surf, (14, 14, 14), pygame.Rect(12, 8, 2, 2))
+        pygame.draw.rect(surf, (14, 14, 14), pygame.Rect(18, 8, 2, 2))
+        return surf
+
+    def _make_dog(self, coat: tuple[int, int, int], dark: tuple[int, int, int]) -> pygame.Surface:
+        surf = pygame.Surface((42, 44), pygame.SRCALPHA)
+        pygame.draw.rect(surf, coat, pygame.Rect(3, 14, 34, 18), border_radius=8)
+        pygame.draw.rect(surf, coat, pygame.Rect(28, 8, 12, 10), border_radius=4)
+        pygame.draw.polygon(surf, dark, [(30, 8), (33, 3), (35, 9)])
+        pygame.draw.rect(surf, dark, pygame.Rect(8, 30, 6, 12), border_radius=2)
+        pygame.draw.rect(surf, dark, pygame.Rect(23, 30, 6, 12), border_radius=2)
+        return surf
+
+    def _make_terminal(self) -> pygame.Surface:
+        surf = pygame.Surface((34, 48), pygame.SRCALPHA)
+        pygame.draw.rect(surf, (56, 72, 96), pygame.Rect(3, 2, 28, 40), border_radius=4)
+        pygame.draw.rect(surf, (86, 222, 158), pygame.Rect(7, 8, 20, 11), border_radius=2)
+        pygame.draw.rect(surf, (26, 28, 36), pygame.Rect(8, 24, 18, 14), border_radius=2)
+        return surf
+
+    def _make_shuriken(self) -> pygame.Surface:
+        surf = pygame.Surface((12, 12), pygame.SRCALPHA)
+        pygame.draw.polygon(surf, (230, 230, 232), [(6, 0), (8, 6), (6, 12), (4, 6)])
+        pygame.draw.polygon(surf, (190, 190, 194), [(0, 6), (6, 4), (12, 6), (6, 8)])
+        pygame.draw.circle(surf, (60, 60, 70), (6, 6), 2)
+        return surf
+
+
 class SaboteurReplica:
     def __init__(self) -> None:
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-        pygame.display.set_caption("Saboteur Replica - Python")
+        pygame.display.set_caption("Saboteur Replica - Pixel Edition")
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont("consolas", 22)
+        self.font = pygame.font.SysFont("consolas", 21)
         self.big = pygame.font.SysFont("consolas", 44, bold=True)
 
-        self.solids = self._build_level()
+        self.sprites = SpriteBank()
+        self.solids = build_level()
         self.physics = WorldPhysics(self.solids)
 
-        self.player = PlayerState(Actor(Rect(90, SCREEN_H - FLOOR_H - 64, 32, 64)))
+        self.player = PlayerState(Actor(Rect(88, SCREEN_H - FLOOR_H - 64, 32, 64)))
         self.player.health = 6
-        self.player.shots = 12
+        self.player.shots = 16
         self.facing = 1
         self.attack_cd = 0.0
         self.attack: AttackWindow | None = None
 
-        self.bomb = Bomb(seconds_left=240)
+        self.bomb = Bomb(seconds_left=260)
         self.rules = GameRules(self.bomb)
 
         self.pickups = [
-            Pickup("time_bomb", Rect(340, 140, 22, 22), RED),
-            Pickup("keycard", Rect(980, 562, 22, 22), BLUE),
-            Pickup("floppy_disk", Rect(1740, 362, 22, 22), CYAN),
-            Pickup("secret_scroll", Rect(2480, 252, 22, 22), YELLOW),
-            Pickup("gold_idol", Rect(3340, 472, 22, 22), ORANGE),
+            Pickup("time_bomb", Rect(360, 568, 22, 22), RED),
+            Pickup("keycard", Rect(1080, 508, 22, 22), BLUE),
+            Pickup("floppy_disk", Rect(1590, 448, 22, 22), CYAN),
+            Pickup("secret_scroll", Rect(2620, 328, 22, 22), YELLOW),
+            Pickup("gold_idol", Rect(3410, 208, 22, 22), ORANGE),
         ]
-        self.terminal = Rect(2860, 472, 34, 48)
-        self.exit_pad = Rect(3960, 78, 120, 24)
+        self.terminal = Rect(2900, 252, 34, 48)
+        self.exit_pad = Rect(3920, 130, 140, 26)
 
         self.enemies: list[Enemy] = [
-            Enemy(Actor(Rect(620, SCREEN_H - FLOOR_H - 56, 30, 56)), "guard", 540, 900, 110, hp=2),
-            Enemy(Actor(Rect(1210, 586 - 56, 30, 56)), "ninja", 1160, 1540, 140, hp=3),
-            Enemy(Actor(Rect(1640, 386 - 56, 30, 56)), "ninja", 1600, 2120, 170, hp=3),
-            Enemy(Actor(Rect(2400, 276 - 56, 30, 56)), "guard", 2280, 2690, 120, hp=2),
-            Enemy(Actor(Rect(3050, 496 - 56, 30, 56)), "ninja", 2920, 3420, 150, hp=3),
-            Enemy(Actor(Rect(3500, SCREEN_H - FLOOR_H - 44, 42, 44)), "dog", 3420, 3890, 170, hp=2),
+            Enemy(Actor(Rect(760, 540 - 56, 30, 56)), "guard", 720, 1080, 104, hp=2),
+            Enemy(Actor(Rect(1260, 480 - 56, 30, 56)), "ninja", 1220, 1600, 132, hp=3),
+            Enemy(Actor(Rect(1770, 420 - 56, 30, 56)), "ninja", 1740, 2140, 144, hp=3),
+            Enemy(Actor(Rect(2280, 360 - 56, 30, 56)), "guard", 2260, 2640, 112, hp=2),
+            Enemy(Actor(Rect(3270, 240 - 56, 30, 56)), "ninja", 3260, 3640, 152, hp=3),
+            Enemy(Actor(Rect(3500, 240 - 44, 42, 44)), "dog", 3380, 3780, 162, hp=2),
         ]
 
         self.projectiles: list[Projectile] = []
         self.camera_x = 0.0
         self.failed = False
         self.won = False
-
-    def _build_level(self) -> list[Rect]:
-        return [
-            Rect(0, SCREEN_H - FLOOR_H, WORLD_W, FLOOR_H),
-            Rect(180, 610, 460, 18),
-            Rect(760, 610, 540, 18),
-            Rect(1420, 610, 510, 18),
-            Rect(2050, 610, 520, 18),
-            Rect(2710, 610, 520, 18),
-            Rect(3380, 610, 560, 18),
-            Rect(220, 410, 460, 18),
-            Rect(860, 410, 560, 18),
-            Rect(1520, 410, 560, 18),
-            Rect(2220, 410, 500, 18),
-            Rect(2860, 520, 420, 18),
-            Rect(300, 300, 360, 18),
-            Rect(1540, 300, 300, 18),
-            Rect(2360, 300, 300, 18),
-            Rect(3820, 102, 300, 18),
-            Rect(710, 300, 24, 310),
-            Rect(1360, 300, 24, 310),
-            Rect(2160, 300, 24, 310),
-            Rect(2800, 300, 24, 310),
-            Rect(3340, 300, 24, 310),
-        ]
 
     def run(self) -> None:
         while True:
@@ -185,23 +202,23 @@ class SaboteurReplica:
         if self.player.shots <= 0:
             return
         p = self.player.actor.rect
-        self.projectiles.append(Projectile(Rect(p.x + p.w / 2, p.y + 24, 10, 6), 680 * self.facing, 1.1, "player"))
+        self.projectiles.append(Projectile(Rect(p.x + p.w / 2, p.y + 24, 12, 12), 700 * self.facing, 1.1, "player"))
         self.player.shots -= 1
 
     def _start_melee(self, style: str) -> None:
         if self.attack_cd > 0:
             return
         p = self.player.actor.rect
-        width, height, ttl, dmg, offset_y = 42, 24, 0.18, 1, 18
+        width, height, ttl, dmg = 40, 24, 0.18, 1
         if style == "kick":
-            width, height, ttl, dmg = 58, 24, 0.2, 2
+            width, height, ttl, dmg = 54, 24, 0.20, 2
         if style == "flying_kick":
-            width, height, ttl, dmg, offset_y = 70, 28, 0.24, 2, 30
+            width, height, ttl, dmg = 68, 28, 0.24, 2
             if self.player.actor.on_ground:
-                self.player.actor.vy = -340
+                self.player.actor.vy = -350
         hit_x = p.right if self.facing > 0 else p.left - width
-        self.attack = AttackWindow(Rect(hit_x, p.y + offset_y, width, height), ttl, dmg)
-        self.attack_cd = 0.28
+        self.attack = AttackWindow(Rect(hit_x, p.y + 20, width, height), ttl, dmg)
+        self.attack_cd = 0.3
 
     def _update(self, dt: float) -> None:
         self.attack_cd = max(0.0, self.attack_cd - dt)
@@ -215,13 +232,12 @@ class SaboteurReplica:
             self.facing = 1
 
         self.physics.move_actor(self.player.actor, dt)
-
         for e in self.enemies:
             e.update(dt, self.physics)
 
         self._update_attack(dt)
         self._update_projectiles(dt)
-        self._enemy_logic(dt)
+        self._enemy_logic()
         self._collect_items()
         self.bomb.tick(dt)
         self._check_end_state()
@@ -235,11 +251,10 @@ class SaboteurReplica:
         self.attack.ttl -= dt
         p = self.player.actor.rect
         self.attack.rect.x = p.right if self.facing > 0 else p.left - self.attack.rect.w
-        self.attack.rect.y = p.y + 18
+        self.attack.rect.y = p.y + 20
         if self.attack.ttl <= 0:
             self.attack = None
             return
-
         for e in self.enemies:
             if e.alive and self.attack.rect.intersects(e.actor.rect):
                 e.hp -= self.attack.damage
@@ -251,45 +266,41 @@ class SaboteurReplica:
         for p in self.projectiles:
             p.rect.x += p.vx * dt
             p.ttl -= dt
-            if p.ttl <= 0:
-                continue
-            if any(p.rect.intersects(s) for s in self.solids):
+            if p.ttl <= 0 or any(p.rect.intersects(s) for s in self.solids):
                 continue
             if p.source == "player":
-                hit = False
-                for e in self.enemies:
-                    if e.alive and p.rect.intersects(e.actor.rect):
-                        e.hp -= 1
-                        if e.hp <= 0:
-                            e.alive = False
-                        hit = True
-                        break
-                if hit:
+                if any(self._hit_enemy(e, p) for e in self.enemies):
                     continue
-            else:
-                if p.rect.intersects(self.player.actor.rect):
-                    self.player.health = max(0, self.player.health - 1)
-                    continue
+            elif p.rect.intersects(self.player.actor.rect):
+                self.player.health = max(0, self.player.health - 1)
+                continue
             alive.append(p)
         self.projectiles = alive
 
-    def _enemy_logic(self, dt: float) -> None:
+    def _hit_enemy(self, e: Enemy, p: Projectile) -> bool:
+        if e.alive and p.rect.intersects(e.actor.rect):
+            e.hp -= 1
+            if e.hp <= 0:
+                e.alive = False
+            return True
+        return False
+
+    def _enemy_logic(self) -> None:
         p = self.player.actor.rect
         for e in self.enemies:
             if not e.alive:
                 continue
             if p.intersects(e.actor.rect):
                 self.player.health = max(0, self.player.health - 1)
-                self.player.actor.rect.x = max(40, self.player.actor.rect.x - 80)
-
+                self.player.actor.rect.x = max(40, self.player.actor.rect.x - 70)
             dist = abs((e.actor.rect.x + e.actor.rect.w / 2) - (p.x + p.w / 2))
-            same_level = abs(e.actor.rect.y - p.y) < 44
-            if e.kind == "ninja" and dist < 260 and same_level and e.attack_cd <= 0:
-                dir_sign = -1 if p.x < e.actor.rect.x else 1
+            same_level = abs(e.actor.rect.y - p.y) < 48
+            if e.kind == "ninja" and dist < 280 and same_level and e.attack_cd <= 0:
+                sign = -1 if p.x < e.actor.rect.x else 1
                 self.projectiles.append(
-                    Projectile(Rect(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 20, 10, 6), 520 * dir_sign, 1.0, "enemy")
+                    Projectile(Rect(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 18, 12, 12), 560 * sign, 1.1, "enemy")
                 )
-                e.attack_cd = 1.5
+                e.attack_cd = 1.4
 
     def _collect_items(self) -> None:
         p = self.player.actor.rect
@@ -313,45 +324,79 @@ class SaboteurReplica:
         if self.rules.can_escape(self.player) and self._all_mission_items_collected() and self.player.actor.rect.intersects(self.exit_pad):
             self.won = True
 
-    def _draw_rect(self, r: Rect, color: tuple[int, int, int]) -> None:
-        pygame.draw.rect(self.screen, color, pygame.Rect(r.x - self.camera_x, r.y, r.w, r.h), border_radius=4)
+    def _draw_sprite(self, rect: Rect, sprite: pygame.Surface, flip: bool = False) -> None:
+        image = pygame.transform.flip(sprite, flip, False) if flip else sprite
+        self.screen.blit(image, (rect.x - self.camera_x, rect.y))
 
-    def _draw(self) -> None:
-        self.screen.fill(BG)
+    def _draw_world(self) -> None:
+        self.screen.fill(SKY)
+        for x in range(0, SCREEN_W, 120):
+            h = 120 + int(30 * math.sin((x + self.camera_x * 0.2) * 0.02))
+            pygame.draw.rect(self.screen, MID_BG, pygame.Rect(x, SCREEN_H - FLOOR_H - h, 90, h))
+        for x in range(0, SCREEN_W, 90):
+            h = 70 + int(20 * math.sin((x + self.camera_x * 0.4) * 0.04))
+            pygame.draw.rect(self.screen, NEAR_BG, pygame.Rect(x, SCREEN_H - FLOOR_H - h, 60, h))
 
         for s in self.solids:
-            self._draw_rect(s, PLATFORM)
+            sx = s.x - self.camera_x
+            if sx > SCREEN_W or sx + s.w < -4:
+                continue
+            pygame.draw.rect(self.screen, PLATFORM_SIDE, pygame.Rect(sx, s.y, s.w, s.h), border_radius=2)
+            pygame.draw.rect(self.screen, PLATFORM_TOP, pygame.Rect(sx, s.y, s.w, 4), border_radius=2)
+
+    def _draw(self) -> None:
+        self._draw_world()
 
         for item in self.pickups:
             if not item.taken:
-                self._draw_rect(item.rect, item.color)
+                pygame.draw.circle(self.screen, item.color, (int(item.rect.x - self.camera_x + 11), int(item.rect.y + 11)), 11)
+                pygame.draw.circle(self.screen, WHITE, (int(item.rect.x - self.camera_x + 11), int(item.rect.y + 11)), 4)
 
-        self._draw_rect(self.terminal, GREEN if self.bomb.defused else YELLOW)
-        self._draw_rect(self.exit_pad, ORANGE)
+        self._draw_sprite(self.terminal, self.sprites.terminal)
+        pygame.draw.rect(
+            self.screen,
+            ORANGE,
+            pygame.Rect(self.exit_pad.x - self.camera_x, self.exit_pad.y, self.exit_pad.w, self.exit_pad.h),
+            border_radius=4,
+        )
+        self.screen.blit(self.font.render("EXTRACT", True, (22, 22, 24)), (self.exit_pad.x - self.camera_x + 26, self.exit_pad.y + 2))
 
         for e in self.enemies:
-            if e.alive:
-                color = RED if e.kind in {"guard", "ninja"} else (170, 130, 85)
-                self._draw_rect(e.actor.rect, color)
+            if not e.alive:
+                continue
+            if e.kind == "guard":
+                self._draw_sprite(e.actor.rect, self.sprites.guard, e.speed < 0)
+            elif e.kind == "ninja":
+                self._draw_sprite(e.actor.rect, self.sprites.ninja, e.speed < 0)
+            else:
+                self._draw_sprite(e.actor.rect, self.sprites.dog, e.speed < 0)
 
         for p in self.projectiles:
-            self._draw_rect(p.rect, CYAN if p.source == "player" else YELLOW)
+            self._draw_sprite(p.rect, self.sprites.shuriken)
 
         if self.attack:
-            self._draw_rect(self.attack.rect, (180, 255, 180))
+            pygame.draw.rect(
+                self.screen,
+                (180, 255, 180),
+                pygame.Rect(self.attack.rect.x - self.camera_x, self.attack.rect.y, self.attack.rect.w, self.attack.rect.h),
+                width=2,
+                border_radius=4,
+            )
 
-        self._draw_rect(self.player.actor.rect, WHITE)
+        self._draw_sprite(self.player.actor.rect, self.sprites.player, self.facing < 0)
 
-        zone = int((self.player.actor.rect.x / WORLD_W) * 7) + 1
+        zone = min(7, int((self.player.actor.rect.x / WORLD_W) * 7) + 1)
         hud = (
             f"ZONE:{zone}/7 HP:{self.player.health} SHURIKEN:{self.player.shots} "
             f"BOMB:{'YES' if self.player.has_bomb else 'NO'} CODES:{'YES' if self.player.has_codes else 'NO'} "
-            f"ITEMS:{sum(1 for p in self.pickups if p.taken)}/{len(self.pickups)} TIMER:{'DEFUSED' if self.bomb.defused else f'{self.bomb.seconds_left:05.1f}s'}"
+            f"ITEMS:{sum(1 for p in self.pickups if p.taken)}/{len(self.pickups)} "
+            f"TIMER:{'DEFUSED' if self.bomb.defused else f'{self.bomb.seconds_left:05.1f}s'}"
         )
-        self.screen.blit(self.font.render(hud, True, WHITE), (16, 14))
-
-        controls = "Move:A/D Jump:Space Shuriken:Z Punch:X Kick:C FlyingKick:V Interact:E"
-        self.screen.blit(self.font.render(controls, True, (180, 188, 210)), (16, 42))
+        self.screen.blit(self.font.render(hud, True, WHITE), (14, 12))
+        self.screen.blit(
+            self.font.render("Move:A/D Jump:Space Shuriken:Z Punch:X Kick:C FlyingKick:V Interact:E", True, (200, 210, 230)),
+            (14, 38),
+        )
 
         if self.failed:
             t = self.big.render("MISSION FAILED - R TO RETRY", True, RED)
@@ -363,9 +408,5 @@ class SaboteurReplica:
         pygame.display.flip()
 
 
-def main() -> None:
-    SaboteurReplica().run()
-
-
 if __name__ == "__main__":
-    main()
+    SaboteurReplica().run()
