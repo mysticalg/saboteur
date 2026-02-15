@@ -2,3 +2,11 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+
+# Build artifacts
+build/
+dist/
+bin/
+.buildozer/
+installer.iss
+*.spec
