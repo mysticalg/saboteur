@@ -363,5 +363,9 @@ class SaboteurReplica:
         pygame.display.flip()
 
 
-if __name__ == "__main__":
+def main() -> None:
     SaboteurReplica().run()
+
+
+if __name__ == "__main__":
+    main()
