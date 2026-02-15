@@ -1,0 +1,44 @@
+name: Build desktop installers
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build EXE and installer
+        shell: pwsh
+        run: ./scripts/build_windows.ps1
+      - name: Upload windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist/Saboteur/**
+            dist/Saboteur-Installer.exe
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dmg helper
+        run: brew install create-dmg
+      - name: Build app + dmg
+        run: ./scripts/build_macos.sh
+      - name: Upload mac artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: |
+            dist/Saboteur.app
+            dist/Saboteur.dmg
