@@ -1,4 +1,4 @@
-name: Build desktop and android installers
+name: Build desktop installers
 
 on:
   workflow_dispatch:
@@ -42,22 +42,3 @@ jobs:
           path: |
             dist/Saboteur.app
             dist/Saboteur.dmg
-
-  android:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install Android build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y zip unzip openjdk-17-jdk libffi-dev libssl-dev
-      - name: Build APK
-        run: ./scripts/build_android.sh
-      - name: Upload Android artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-build
-          path: bin/*.apk
