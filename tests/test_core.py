@@ -29,3 +29,20 @@ def test_bomb_explodes_when_timer_runs_out():
     rules = GameRules(bomb)
     bomb.tick(0.2)
     assert rules.bomb_exploded() is True
+
+
+def test_drop_down_through_one_way_platform_when_requested():
+    one_way = Rect(0, 100, 300, 10)
+    physics = WorldPhysics([], one_way_platforms=[one_way])
+    actor = Actor(Rect(40, 80, 20, 20), vy=0)
+
+    # First, actor stands on one-way platform normally.
+    for _ in range(5):
+        physics.move_actor(actor, 0.05, drop_down=False)
+    assert actor.on_ground is True
+
+    # Then, with drop_down enabled, actor should pass through it.
+    for _ in range(8):
+        physics.move_actor(actor, 0.05, drop_down=True)
+    assert actor.rect.top > one_way.top
+    assert actor.on_ground is False
