@@ -43,3 +43,9 @@ def test_level_route_to_extraction_is_connected():
 
 def test_game_module_constants_for_vertical_space():
     assert SCREEN_H >= 700
+
+
+def test_spawn_side_has_floor_under_water():
+    solids = build_level()
+    # Ensure there is a solid seabed under the initial water zone to prevent falling out.
+    assert any(s.x <= 64 <= s.x + s.w and s.y >= SCREEN_H - 40 for s in solids)
