@@ -91,6 +91,13 @@ class Pickup:
 
 
 @dataclass
+class AreaLabel:
+    name: str
+    rect: Rect
+    color: tuple[int, int, int]
+
+
+@dataclass
 class Particle:
     x: float
     y: float
@@ -219,6 +226,17 @@ class SaboteurReplica:
         ]
         self.terminal = Rect(9120, 290, 34, 48)
         self.exit_pad = Rect(9630, 306, 140, 26)
+        self.areas = [
+            AreaLabel("SHORE ENTRY", Rect(120, 594, 320, 58), (76, 130, 180)),
+            AreaLabel("MAINTENANCE STAIRS", Rect(2860, 586, 420, 58), (110, 130, 155)),
+            AreaLabel("MONORAIL ACCESS", Rect(5200, 586, 420, 58), (136, 116, 170)),
+            AreaLabel("SKYSCRAPER SECURITY", Rect(7220, 618, 540, 52), (136, 82, 92)),
+            AreaLabel("STORAGE AREA", Rect(7920, 554, 560, 52), (124, 112, 90)),
+            AreaLabel("SERVER ROOMS", Rect(7580, 426, 580, 52), (80, 132, 146)),
+            AreaLabel("GUARD POSTS", Rect(8440, 362, 540, 52), (144, 96, 96)),
+            AreaLabel("HEADQUARTERS", Rect(8200, 170, 600, 62), (150, 116, 78)),
+        ]
+
 
         self.enemies: list[Enemy] = [
             Enemy(Actor(Rect(1320, 554, 30, 56)), "guard", 1200, 1760, 94, hp=2),
@@ -227,6 +245,9 @@ class SaboteurReplica:
             Enemy(Actor(Rect(4860, 414, 30, 56)), "ninja", 4680, 5440, 128, hp=3),
             Enemy(Actor(Rect(6520, 624, 42, 44)), "dog", 6460, 8040, 152, hp=2),
             Enemy(Actor(Rect(8460, 294, 30, 56)), "ninja", 8340, 9400, 146, hp=4),
+            Enemy(Actor(Rect(7580, 562, 30, 56)), "guard", 7420, 8200, 118, hp=3),
+            Enemy(Actor(Rect(8780, 498, 30, 56)), "guard", 8600, 9380, 130, hp=3),
+            Enemy(Actor(Rect(8420, 178, 30, 56)), "ninja", 8260, 9000, 152, hp=4),
         ]
 
         self.projectiles: list[Projectile] = []
@@ -478,6 +499,26 @@ class SaboteurReplica:
             sx = bush.x - self.camera_x
             pygame.draw.ellipse(self.screen, (42, 122, 72), pygame.Rect(sx, bush.y, bush.w, bush.h))
 
+        for area in self.areas:
+            sx = area.rect.x - self.camera_x
+            if sx > SCREEN_W or sx + area.rect.w < -8:
+                continue
+            pygame.draw.rect(self.screen, area.color, pygame.Rect(sx, area.rect.y, area.rect.w, area.rect.h), border_radius=6)
+            pygame.draw.rect(self.screen, (18, 22, 30), pygame.Rect(sx, area.rect.y, area.rect.w, area.rect.h), width=2, border_radius=6)
+            label = self.font.render(area.name, True, (240, 242, 248))
+            self.screen.blit(label, (sx + 12, area.rect.y + 16))
+
+        # Elevator shafts and monorail supports inside the tower.
+        for shaft_x in (7420, 8080, 8740, 9320):
+            sx = shaft_x - self.camera_x
+            pygame.draw.rect(self.screen, (48, 54, 70), pygame.Rect(sx, 92, 52, 586), border_radius=3)
+            for y in range(116, 650, 64):
+                pygame.draw.rect(self.screen, (104, 118, 146), pygame.Rect(sx + 6, y, 40, 20), border_radius=2)
+
+        pygame.draw.rect(self.screen, (84, 96, 128), pygame.Rect(7240 - self.camera_x, 122, 2220, 8))
+        for i in range(7240, 9460, 58):
+            pygame.draw.rect(self.screen, (152, 166, 198), pygame.Rect(i - self.camera_x, 126, 34, 5), border_radius=1)
+
         for s in self.solids:
             sx = s.x - self.camera_x
             if sx > SCREEN_W or sx + s.w < -4:
@@ -545,7 +586,7 @@ class SaboteurReplica:
             self.screen.blit(self.font.render("HIDDEN", True, GREEN), (self.player.actor.rect.x - self.camera_x - 4, self.player.actor.rect.y - 22))
 
         hud = (
-            f"ZONE:{min(10, int((self.player.actor.rect.x / WORLD_W) * 10) + 1)}/10 HP:{self.player.health} SHURIKEN:{self.player.shots} "
+            f"ZONE:{min(12, int((self.player.actor.rect.x / WORLD_W) * 12) + 1)}/12 HP:{self.player.health} SHURIKEN:{self.player.shots} "
             f"BOMB:{'YES' if self.player.has_bomb else 'NO'} CODES:{'YES' if self.player.has_codes else 'NO'} "
             f"ITEMS:{sum(1 for p in self.pickups if p.taken)}/{len(self.pickups)} "
             f"TIMER:{'DEFUSED' if self.bomb.defused else f'{self.bomb.seconds_left:06.1f}s'}"
