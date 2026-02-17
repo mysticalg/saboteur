@@ -87,3 +87,18 @@ def test_xp_curve_increases_per_level():
 
     assert xp_to_next_level(1) < xp_to_next_level(2) < xp_to_next_level(5)
     assert xp_to_next_level(1) >= 50
+
+
+def test_weapon_profiles_include_requested_arsenal():
+    from game import weapon_profile
+
+    for weapon in ["bat", "stick", "brick", "pole", "nunchukas", "sais", "sword", "gun", "machine_gun", "silencer"]:
+        profile = weapon_profile(weapon)
+        assert profile["melee"] > 0
+
+
+def test_meditation_recovery_scales_with_level():
+    from game import meditate_recovery_per_sec
+
+    assert meditate_recovery_per_sec(1) > 0
+    assert meditate_recovery_per_sec(5) > meditate_recovery_per_sec(1)

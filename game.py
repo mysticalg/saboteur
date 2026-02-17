@@ -74,6 +74,27 @@ def xp_to_next_level(level: int) -> int:
     return 70 + (level - 1) * 35
 
 
+def weapon_profile(name: str) -> dict[str, float]:
+    profiles: dict[str, dict[str, float]] = {
+        "fists": {"melee": 1.0, "ranged": 0.0, "energy": 4.0, "ammo": 0.0, "fire_cd": 0.0},
+        "bat": {"melee": 1.4, "ranged": 0.0, "energy": 5.0, "ammo": 0.0, "fire_cd": 0.0},
+        "stick": {"melee": 1.2, "ranged": 0.0, "energy": 4.5, "ammo": 0.0, "fire_cd": 0.0},
+        "brick": {"melee": 1.3, "ranged": 0.0, "energy": 5.0, "ammo": 0.0, "fire_cd": 0.0},
+        "pole": {"melee": 1.35, "ranged": 0.0, "energy": 5.5, "ammo": 0.0, "fire_cd": 0.0},
+        "nunchukas": {"melee": 1.6, "ranged": 0.0, "energy": 6.5, "ammo": 0.0, "fire_cd": 0.0},
+        "sais": {"melee": 1.55, "ranged": 0.0, "energy": 6.0, "ammo": 0.0, "fire_cd": 0.0},
+        "sword": {"melee": 1.85, "ranged": 0.0, "energy": 7.0, "ammo": 0.0, "fire_cd": 0.0},
+        "gun": {"melee": 1.0, "ranged": 1.0, "energy": 2.0, "ammo": 30.0, "fire_cd": 0.34},
+        "machine_gun": {"melee": 0.9, "ranged": 0.8, "energy": 2.8, "ammo": 70.0, "fire_cd": 0.13},
+        "silencer": {"melee": 1.0, "ranged": 1.2, "energy": 1.8, "ammo": 28.0, "fire_cd": 0.28},
+    }
+    return profiles.get(name, profiles["fists"])
+
+
+def meditate_recovery_per_sec(level: int) -> float:
+    return 16.0 + min(14.0, (level - 1) * 1.4)
+
+
 @dataclass
 class Enemy:
     actor: Actor
@@ -313,6 +334,13 @@ class SaboteurReplica:
         self.next_level_xp = xp_to_next_level(self.level)
         self.grapple_bonus = 0.0
         self.grapple_line: GrappleLine | None = None
+        self.energy = 100.0
+        self.max_energy = 100.0
+        self.meditating = False
+        self.weapons_owned: set[str] = {"fists", "bat"}
+        self.current_weapon = "bat"
+        self.weapon_ammo: dict[str, int] = {"gun": 0, "machine_gun": 0, "silencer": 0}
+        self.ranged_cd = 0.0
 
         self.bomb = Bomb(seconds_left=3600)
         self.rules = GameRules(self.bomb)
@@ -324,6 +352,17 @@ class SaboteurReplica:
             Pickup("engineering_codes", Rect(10320, 210 + WORLD_Y_OFFSET, 22, 22), YELLOW),
             Pickup("vault_relay", Rect(14120, -84 + WORLD_Y_OFFSET, 22, 22), ORANGE),
             Pickup("silo_overrides", Rect(6200, 2460, 22, 22), RED),
+        ]
+        self.weapon_pickups = [
+            Pickup("stick", Rect(1860, 638 + WORLD_Y_OFFSET, 22, 22), (170, 150, 112)),
+            Pickup("brick", Rect(2920, 638 + WORLD_Y_OFFSET, 22, 22), (188, 92, 86)),
+            Pickup("pole", Rect(4180, 638 + WORLD_Y_OFFSET, 22, 22), (186, 166, 104)),
+            Pickup("nunchukas", Rect(7440, 530 + WORLD_Y_OFFSET, 22, 22), (192, 166, 120)),
+            Pickup("sais", Rect(9580, 466 + WORLD_Y_OFFSET, 22, 22), (170, 180, 210)),
+            Pickup("sword", Rect(13140, 102 + WORLD_Y_OFFSET, 22, 22), (208, 214, 226)),
+            Pickup("gun", Rect(5620, 2440, 22, 22), (146, 156, 172)),
+            Pickup("machine_gun", Rect(10940, 2060, 22, 22), (132, 144, 168)),
+            Pickup("silencer", Rect(15240, -250, 22, 22), (112, 136, 166)),
         ]
         self.terminal = Rect(14820, -128 + WORLD_Y_OFFSET, 34, 48)
         self.exit_pad = Rect(15480, -96 + WORLD_Y_OFFSET, 170, 26)
@@ -476,7 +515,9 @@ class SaboteurReplica:
             elif event.key == pygame.K_SPACE and (self.player.actor.on_ground or self.player.actor.in_water or self.player.actor.on_ladder):
                 self.player.actor.vy = JUMP_VELOCITY * (0.58 if self.player.actor.in_water else 1.0)
             if event.key == pygame.K_z:
-                self._throw_shuriken()
+                self._use_weapon_fire()
+            if event.key == pygame.K_TAB:
+                self._cycle_weapon()
             if event.key == pygame.K_g:
                 self._use_grappling_hook()
             if event.key == pygame.K_x:
@@ -493,25 +534,58 @@ class SaboteurReplica:
             if event.key == pygame.K_ESCAPE:
                 self.state = "splash"
 
-    def _throw_shuriken(self) -> None:
-        if self.player.shots <= 0:
+    def _cycle_weapon(self) -> None:
+        owned = sorted(self.weapons_owned)
+        if not owned:
             return
+        i = owned.index(self.current_weapon) if self.current_weapon in owned else 0
+        self.current_weapon = owned[(i + 1) % len(owned)]
+
+    def _use_weapon_fire(self) -> None:
+        weapon = weapon_profile(self.current_weapon)
+        if weapon["ranged"] <= 0:
+            # fallback to classic shuriken throw
+            if self.player.shots <= 0 or self.energy < 3:
+                return
+            p = self.player.actor.rect
+            self.projectiles.append(Projectile(Rect(p.x + p.w / 2, p.y + 24, 12, 12), 700 * self.facing, 1.1, "player"))
+            self.player.shots -= 1
+            self.energy = max(0.0, self.energy - 3)
+            return
+
+        if self.ranged_cd > 0:
+            return
+        ammo = self.weapon_ammo.get(self.current_weapon, 0)
+        if ammo <= 0:
+            return
+        energy_cost = weapon["energy"]
+        if self.energy < energy_cost:
+            return
+
         p = self.player.actor.rect
-        self.projectiles.append(Projectile(Rect(p.x + p.w / 2, p.y + 24, 12, 12), 700 * self.facing, 1.1, "player"))
-        self.player.shots -= 1
+        speed = 760 if self.current_weapon == "machine_gun" else 700
+        ttl = 1.0 if self.current_weapon == "machine_gun" else 1.2
+        self.projectiles.append(Projectile(Rect(p.x + p.w / 2, p.y + 20, 10, 10), speed * self.facing, ttl, "player"))
+        self.weapon_ammo[self.current_weapon] = ammo - 1
+        self.energy = max(0.0, self.energy - energy_cost)
+        self.ranged_cd = weapon["fire_cd"]
 
     def _start_melee(self, style: str) -> None:
         if self.attack_cd > 0:
             return
         p = self.player.actor.rect
         width, height, ttl, dmg = 40, 24, 0.18, 1
+        weapon = weapon_profile(self.current_weapon)
         if style == "kick":
             width, height, ttl, dmg = 54, 24, 0.2, 2
         if style == "flying_kick":
             width, height, ttl, dmg = 68, 28, 0.24, 3
             if self.player.actor.on_ground:
                 self.player.actor.vy = -350
-        dmg += (self.level - 1) // 2
+        dmg = int((dmg + (self.level - 1) // 2) * weapon["melee"])
+        if self.energy < weapon["energy"]:
+            return
+        self.energy = max(0.0, self.energy - weapon["energy"])
         hit_x = p.right if self.facing > 0 else p.left - width
         self.attack = AttackWindow(Rect(hit_x, p.y + 20, width, height), ttl, dmg)
         self.attack_cd = 0.3
@@ -524,6 +598,7 @@ class SaboteurReplica:
         self.invisibility_timer = max(0.0, self.invisibility_timer - dt)
         self.invincibility_timer = max(0.0, self.invincibility_timer - dt)
         self.speed_timer = max(0.0, self.speed_timer - dt)
+        self.ranged_cd = max(0.0, self.ranged_cd - dt)
         if self.grapple_line:
             self.grapple_line.ttl -= dt
             if self.grapple_line.ttl <= 0:
@@ -551,6 +626,11 @@ class SaboteurReplica:
 
         drop_down = self.drop_through_timer > 0 or ((keys[pygame.K_DOWN] or keys[pygame.K_s]) and keys[pygame.K_SPACE])
         self.hidden = keys[pygame.K_DOWN] and any(self.player.actor.rect.intersects(b) for b in self.bushes)
+        self.meditating = bool(keys[pygame.K_m] and self.player.actor.on_ground and abs(self.player.actor.vx) < 8 and abs(self.player.actor.vy) < 18)
+        if self.meditating:
+            self.energy = min(self.max_energy, self.energy + meditate_recovery_per_sec(self.level) * dt)
+        else:
+            self.energy = min(self.max_energy, self.energy + 2.2 * dt)
 
         self.physics.move_actor(self.player.actor, dt, drop_down=drop_down, climb_dir=climb_dir)
         self.player.actor.rect.x = max(0, min(WORLD_W - self.player.actor.rect.w, self.player.actor.rect.x))
@@ -630,6 +710,9 @@ class SaboteurReplica:
         self._award_xp(ENEMY_XP.get(enemy.kind, 10))
 
     def _use_grappling_hook(self) -> None:
+        if self.energy < 14:
+            return
+        self.energy = max(0.0, self.energy - 14)
         p = self.player.actor.rect
         start = (p.x + p.w / 2, p.y + 16)
         max_range = self._grapple_range()
@@ -742,6 +825,15 @@ class SaboteurReplica:
                 elif item.name in {"keycard", "engineering_codes"}:
                     self.rules.player_collects_codes(self.player)
 
+        for wp in self.weapon_pickups:
+            if not wp.taken and p.intersects(wp.rect):
+                wp.taken = True
+                self.weapons_owned.add(wp.name)
+                if wp.name in self.weapon_ammo:
+                    self.weapon_ammo[wp.name] = max(self.weapon_ammo[wp.name], int(weapon_profile(wp.name)["ammo"]))
+                self.current_weapon = wp.name
+                self._emit_particles(wp.rect.x + 11, wp.rect.y + 11, wp.color, 16)
+
     def _update_drops(self, dt: float) -> None:
         alive: list[Drop] = []
         for drop in self.drops:
@@ -760,12 +852,16 @@ class SaboteurReplica:
             self.drops.append(Drop("invincibility", Rect(cx + 44, cy, 24, 24), ttl=24.0))
             return
 
-        if random.random() < 0.12:
+        if random.random() < 0.16:
             self.drops.append(Drop("gold", Rect(cx, cy, 24, 24)))
 
-        if random.random() < 0.08:
-            kind = random.choice(["invisibility", "invincibility", "speed"])
+        if random.random() < 0.12:
+            kind = random.choice(["invisibility", "invincibility", "speed", "energy_orb"])
             self.drops.append(Drop(kind, Rect(cx + 18, cy, 24, 24)))
+
+        if enemy.kind in {"thug", "henchman", "guard", "ninja", "assassin", "robot"} and random.random() < 0.14:
+            kind = random.choice(["stick", "brick", "pole", "nunchukas", "sais", "sword", "gun", "machine_gun", "silencer"])
+            self.drops.append(Drop(kind, Rect(cx - 20, cy + 12, 24, 24)))
 
     def _collect_drops(self) -> None:
         p = self.player.actor.rect
@@ -786,6 +882,15 @@ class SaboteurReplica:
             elif drop.kind == "speed":
                 self.speed_timer = max(self.speed_timer, 9.0)
                 self._emit_particles(drop.rect.x + 12, drop.rect.y + 12, GREEN, 12)
+            elif drop.kind == "energy_orb":
+                self.energy = min(self.max_energy, self.energy + 38)
+                self._emit_particles(drop.rect.x + 12, drop.rect.y + 12, CYAN, 14)
+            elif drop.kind in {"stick", "brick", "pole", "nunchukas", "sais", "sword", "gun", "machine_gun", "silencer"}:
+                self.weapons_owned.add(drop.kind)
+                if drop.kind in self.weapon_ammo:
+                    self.weapon_ammo[drop.kind] = self.weapon_ammo.get(drop.kind, 0) + 18
+                self.current_weapon = drop.kind
+                self._emit_particles(drop.rect.x + 12, drop.rect.y + 12, ORANGE, 12)
         self.drops = remaining
 
     def _all_mission_items_collected(self) -> bool:
@@ -1107,6 +1212,9 @@ class SaboteurReplica:
         for item in self.pickups:
             if not item.taken:
                 self._draw_pickup(item)
+        for wp in self.weapon_pickups:
+            if not wp.taken:
+                self._draw_pickup(wp)
 
         terminal_glow = 0.84 + 0.16 * (0.5 + 0.5 * math.sin(self.anim_time * 10.0))
         terminal_frame = self.sprites.terminal.copy()
@@ -1170,6 +1278,10 @@ class SaboteurReplica:
                 pygame.draw.circle(self.screen, CYAN, (sx, sy), 10, width=3)
             elif drop.kind == "invincibility":
                 pygame.draw.circle(self.screen, YELLOW, (sx, sy), 10, width=3)
+            elif drop.kind == "energy_orb":
+                pygame.draw.circle(self.screen, (120, 240, 240), (sx, sy), 10)
+            elif drop.kind in {"stick", "brick", "pole", "nunchukas", "sais", "sword", "gun", "machine_gun", "silencer"}:
+                pygame.draw.rect(self.screen, (198, 176, 124), pygame.Rect(sx - 10, sy - 6, 20, 12), border_radius=2)
             else:
                 pygame.draw.polygon(self.screen, GREEN, [(sx, sy - 10), (sx + 10, sy), (sx, sy + 10), (sx - 10, sy)])
 
@@ -1189,6 +1301,8 @@ class SaboteurReplica:
             self._draw_character_animated(self.player.actor.rect, self.sprites.player, self.facing < 0, moving=moving, fast=abs(self.player.actor.vx) > RUN_SPEED, airborne=not self.player.actor.on_ground)
         if self.hidden:
             self.screen.blit(self.font.render("HIDDEN", True, GREEN), (self.player.actor.rect.x - self.camera_x - 4, self.player.actor.rect.y - self.camera_y - 22))
+        if self.meditating:
+            self.screen.blit(self.font.render("MEDITATING", True, CYAN), (self.player.actor.rect.x - self.camera_x - 10, self.player.actor.rect.y - self.camera_y - 40))
 
         hud = (
             f"ZONE:{min(12, int((self.player.actor.rect.x / WORLD_W) * 12) + 1)}/12 HP:{self.player.health} SHURIKEN:{self.player.shots} "
@@ -1204,9 +1318,10 @@ class SaboteurReplica:
         self.screen.blit(self.font.render("ANIMATION:60FPS LOOP", True, (168, 212, 168)), (14, 136))
         obj = f"OBJECTIVES SILO:{'DONE' if self.silo_sabotaged else 'PENDING'} HELI:TOP PAD"
         self.screen.blit(self.font.render(obj, True, (220, 204, 156)), (14, 160))
-        xp_line = f"LEVEL:{self.level} XP:{self.xp}/{self.next_level_xp} GRAPPLE:{int(self._grapple_range())}px"
+        ammo = self.weapon_ammo.get(self.current_weapon, 0) if self.current_weapon in self.weapon_ammo else self.player.shots
+        xp_line = f"LEVEL:{self.level} XP:{self.xp}/{self.next_level_xp} GRAPPLE:{int(self._grapple_range())}px ENERGY:{int(self.energy)} WEAPON:{self.current_weapon.upper()} AMMO:{ammo}"
         self.screen.blit(self.font.render(xp_line, True, (180, 210, 250)), (14, 184))
-        controls = "Move:A/D Jump:Space Grapple:G Drop:Down+Space Climb:W/S Elevators:auto Interact:E ESC:Menu"
+        controls = "Move:A/D Jump:Space Fire:Z Grapple:G Meditate:M Cycle:Tab Interact:E ESC:Menu"
         self.screen.blit(self.font.render(controls, True, (200, 210, 230)), (14, 86))
 
         if self.failed:
