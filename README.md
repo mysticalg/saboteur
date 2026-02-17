@@ -9,9 +9,9 @@ This version now includes:
 - Stealth traversal options (bush hiding, swim approach, moving train corridor)
 - Classic mission items (bomb + codes + extra collectibles)
 - Expanded enemy roster: bats, rats, snakes, guards, ninjas, henchmen, assassins, thugs, robots
-- Melee + shuriken combat
+- Melee + shuriken combat + grappling-hook traversal
 - 60 FPS animation pass (character bob/sway + spinning shuriken + terminal flicker)
-- 1-hour mission timer, terminal defuse, missile-silo sabotage, and helicopter extraction objective
+- 1-hour mission timer, terminal defuse, missile-silo sabotage, helicopter extraction, and XP level-up progression
 
 ## Run with Godot (new)
 
@@ -50,6 +50,7 @@ python game.py
 - Climb ladders up/down: `W/S` or `Up/Down`
 - Elevators: ride moving lift cars in tower shafts
 - Throw shuriken: `Z`
+- Grappling hook: `G` (range increases as you level up)
 - Punch: `X`
 - Kick: `C`
 - Flying kick: `V`
@@ -66,7 +67,7 @@ python game.py
 5. Sabotage the nuclear missile silo at the silo console.
 6. Escape from the top helipad helicopter.
 
-You fail if health reaches 0 or the timer expires.
+You fail if health reaches 0 or the timer expires. Defeating enemies grants XP: each level makes you slightly faster/stronger and extends grappling-hook range.
 
 
 ## Playability checks

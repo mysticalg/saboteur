@@ -80,3 +80,10 @@ def test_has_helipad_top_and_silo_chamber():
     solids = build_level()
     assert any(s.y <= -220 and s.w >= 900 for s in solids)
     assert any(5200 <= s.x <= 5600 and s.y >= 2400 and s.w >= 3000 for s in solids)
+
+
+def test_xp_curve_increases_per_level():
+    from game import xp_to_next_level
+
+    assert xp_to_next_level(1) < xp_to_next_level(2) < xp_to_next_level(5)
+    assert xp_to_next_level(1) >= 50

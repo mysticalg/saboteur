@@ -53,6 +53,27 @@ OPENAI_IMAGE_MODEL = "gpt-image-1"
 OPENAI_TOKEN_FILE = Path.home() / ".saboteur_openai_api_key"
 
 
+ENEMY_XP = {
+    "bat": 6,
+    "rat": 7,
+    "snake": 8,
+    "dog": 8,
+    "guard": 10,
+    "henchman": 11,
+    "thug": 12,
+    "ninja": 13,
+    "assassin": 16,
+    "heavy": 18,
+    "drone": 18,
+    "robot": 20,
+    "boss": 40,
+}
+
+
+def xp_to_next_level(level: int) -> int:
+    return 70 + (level - 1) * 35
+
+
 @dataclass
 class Enemy:
     actor: Actor
@@ -138,6 +159,13 @@ class ElevatorCar:
     y_min: float
     y_max: float
     speed: float
+
+
+@dataclass
+class GrappleLine:
+    start: tuple[float, float]
+    end: tuple[float, float]
+    ttl: float
 
 
 class SpriteBank:
@@ -280,6 +308,11 @@ class SaboteurReplica:
         self.invisibility_timer = 0.0
         self.invincibility_timer = 0.0
         self.speed_timer = 0.0
+        self.level = 1
+        self.xp = 0
+        self.next_level_xp = xp_to_next_level(self.level)
+        self.grapple_bonus = 0.0
+        self.grapple_line: GrappleLine | None = None
 
         self.bomb = Bomb(seconds_left=3600)
         self.rules = GameRules(self.bomb)
@@ -444,6 +477,8 @@ class SaboteurReplica:
                 self.player.actor.vy = JUMP_VELOCITY * (0.58 if self.player.actor.in_water else 1.0)
             if event.key == pygame.K_z:
                 self._throw_shuriken()
+            if event.key == pygame.K_g:
+                self._use_grappling_hook()
             if event.key == pygame.K_x:
                 self._start_melee("punch")
             if event.key == pygame.K_c:
@@ -476,6 +511,7 @@ class SaboteurReplica:
             width, height, ttl, dmg = 68, 28, 0.24, 3
             if self.player.actor.on_ground:
                 self.player.actor.vy = -350
+        dmg += (self.level - 1) // 2
         hit_x = p.right if self.facing > 0 else p.left - width
         self.attack = AttackWindow(Rect(hit_x, p.y + 20, width, height), ttl, dmg)
         self.attack_cd = 0.3
@@ -488,10 +524,15 @@ class SaboteurReplica:
         self.invisibility_timer = max(0.0, self.invisibility_timer - dt)
         self.invincibility_timer = max(0.0, self.invincibility_timer - dt)
         self.speed_timer = max(0.0, self.speed_timer - dt)
+        if self.grapple_line:
+            self.grapple_line.ttl -= dt
+            if self.grapple_line.ttl <= 0:
+                self.grapple_line = None
         keys = pygame.key.get_pressed()
 
         speed_boost = 1.45 if self.speed_timer > 0 else 1.0
-        move_speed = RUN_SPEED * speed_boost * (0.58 if self.player.actor.in_water else 1.0)
+        level_speed = 1.0 + (self.level - 1) * 0.03
+        move_speed = RUN_SPEED * level_speed * speed_boost * (0.58 if self.player.actor.in_water else 1.0)
         if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
             move_speed *= 0.55
         self.player.actor.vx = 0
@@ -572,6 +613,56 @@ class SaboteurReplica:
                 p.y = elevator.rect.top - p.h
                 self.player.actor.on_ground = True
 
+    def _grapple_range(self) -> float:
+        return 260.0 + self.grapple_bonus + (self.level - 1) * 35.0
+
+    def _award_xp(self, amount: int) -> None:
+        self.xp += amount
+        while self.xp >= self.next_level_xp:
+            self.xp -= self.next_level_xp
+            self.level += 1
+            self.grapple_bonus += 18.0
+            self.next_level_xp = xp_to_next_level(self.level)
+            self._emit_particles(self.player.actor.rect.x + 16, self.player.actor.rect.y + 16, GOLD, 20)
+
+    def _on_enemy_defeated(self, enemy: Enemy) -> None:
+        self._spawn_enemy_drop(enemy)
+        self._award_xp(ENEMY_XP.get(enemy.kind, 10))
+
+    def _use_grappling_hook(self) -> None:
+        p = self.player.actor.rect
+        start = (p.x + p.w / 2, p.y + 16)
+        max_range = self._grapple_range()
+        direction = 1 if self.facing > 0 else -1
+        target_x = start[0] + direction * max_range
+        target_y = start[1] - min(210, max_range * 0.55)
+
+        anchor: tuple[float, float] | None = None
+        # Find an anchor point on nearby solid tops.
+        for solid in self.solids:
+            top_y = solid.top
+            if top_y >= start[1]:
+                continue
+            if direction > 0 and solid.left < start[0]:
+                continue
+            if direction < 0 and solid.right > start[0]:
+                continue
+            ax = solid.left if direction > 0 else solid.right
+            dx = ax - start[0]
+            dy = top_y - start[1]
+            if dx * dx + dy * dy <= max_range * max_range:
+                if anchor is None or abs(dx) < abs(anchor[0] - start[0]):
+                    anchor = (ax, top_y)
+
+        if anchor is None:
+            anchor = (target_x, target_y)
+
+        self.grapple_line = GrappleLine(start=start, end=anchor, ttl=0.2)
+        pull_x = (anchor[0] - start[0]) * 2.4
+        pull_y = (anchor[1] - start[1]) * 2.0
+        self.player.actor.vx = max(-520, min(520, pull_x))
+        self.player.actor.vy = max(-760, min(-220, pull_y))
+
     def _update_attack(self, dt: float) -> None:
         if not self.attack:
             return
@@ -589,7 +680,7 @@ class SaboteurReplica:
                 if e.hp <= 0:
                     e.alive = False
                     self._emit_particles(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 24, ORANGE, 14)
-                    self._spawn_enemy_drop(e)
+                    self._on_enemy_defeated(e)
 
     def _update_projectiles(self, dt: float) -> None:
         alive: list[Projectile] = []
@@ -616,7 +707,7 @@ class SaboteurReplica:
             if e.hp <= 0:
                 e.alive = False
                 self._emit_particles(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 24, ORANGE, 12)
-                self._spawn_enemy_drop(e)
+                self._on_enemy_defeated(e)
             return True
         return False
 
@@ -1062,6 +1153,14 @@ class SaboteurReplica:
         for p in self.projectiles:
             self._draw_spinning_shuriken(p.rect)
 
+        if self.grapple_line:
+            sx = self.grapple_line.start[0] - self.camera_x
+            sy = self.grapple_line.start[1] - self.camera_y
+            ex = self.grapple_line.end[0] - self.camera_x
+            ey = self.grapple_line.end[1] - self.camera_y
+            pygame.draw.line(self.screen, (202, 212, 236), (sx, sy), (ex, ey), 2)
+            pygame.draw.circle(self.screen, (228, 236, 248), (int(ex), int(ey)), 4)
+
         for drop in self.drops:
             sx = int(drop.rect.x - self.camera_x + drop.rect.w / 2)
             sy = int(drop.rect.y - self.camera_y + drop.rect.h / 2)
@@ -1105,7 +1204,9 @@ class SaboteurReplica:
         self.screen.blit(self.font.render("ANIMATION:60FPS LOOP", True, (168, 212, 168)), (14, 136))
         obj = f"OBJECTIVES SILO:{'DONE' if self.silo_sabotaged else 'PENDING'} HELI:TOP PAD"
         self.screen.blit(self.font.render(obj, True, (220, 204, 156)), (14, 160))
-        controls = "Move:A/D Jump:Space Drop:Down+Space Climb:W/S Elevators:auto Interact:E ESC:Menu"
+        xp_line = f"LEVEL:{self.level} XP:{self.xp}/{self.next_level_xp} GRAPPLE:{int(self._grapple_range())}px"
+        self.screen.blit(self.font.render(xp_line, True, (180, 210, 250)), (14, 184))
+        controls = "Move:A/D Jump:Space Grapple:G Drop:Down+Space Climb:W/S Elevators:auto Interact:E ESC:Menu"
         self.screen.blit(self.font.render(controls, True, (200, 210, 230)), (14, 86))
 
         if self.failed:
