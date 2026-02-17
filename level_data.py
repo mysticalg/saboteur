@@ -17,7 +17,11 @@ def build_level() -> list[Rect]:
         Rect(0, SCREEN_H - 24 + oy, 960, 24),
         Rect(220, SCREEN_H - 110 + oy, 360, 22),
         Rect(560, SCREEN_H - 170 + oy, 380, 24),
-        Rect(960, SCREEN_H - FLOOR_H + oy, WORLD_W - 960, FLOOR_H),
+        Rect(960, SCREEN_H - FLOOR_H + oy, 2240, FLOOR_H),
+        Rect(3360, SCREEN_H - FLOOR_H + oy, 2960, FLOOR_H),
+        Rect(6500, SCREEN_H - FLOOR_H + oy, 3560, FLOOR_H),
+        Rect(10240, SCREEN_H - FLOOR_H + oy, 3200, FLOOR_H),
+        Rect(13620, SCREEN_H - FLOOR_H + oy, 3180, FLOOR_H),
         Rect(1120, 680 + oy, 2400, 20),
         Rect(3560, 680 + oy, 2400, 20),
         Rect(6020, 680 + oy, 2600, 20),
@@ -117,6 +121,51 @@ def build_level() -> list[Rect]:
             Rect(11280, 68, 1420, 14),
             Rect(11940, -20, 1160, 14),
             Rect(12620, -108, 880, 14),
+            # Lower cavern maze (multiple underground screens).
+            Rect(1740, 1640, 2800, 26),
+            Rect(4700, 1640, 1900, 26),
+            Rect(6900, 1640, 2300, 26),
+            Rect(9600, 1640, 2200, 26),
+            Rect(12040, 1640, 3000, 26),
+            Rect(1820, 1860, 840, 22),
+            Rect(2860, 1860, 760, 22),
+            Rect(3820, 1860, 900, 22),
+            Rect(5000, 1860, 980, 22),
+            Rect(6180, 1860, 860, 22),
+            Rect(7240, 1860, 960, 22),
+            Rect(8380, 1860, 940, 22),
+            Rect(9500, 1860, 980, 22),
+            Rect(10680, 1860, 900, 22),
+            Rect(11780, 1860, 1000, 22),
+            Rect(12980, 1860, 980, 22),
+            Rect(14180, 1860, 980, 22),
+            Rect(1640, 2120, 760, 22),
+            Rect(2580, 2120, 700, 22),
+            Rect(3440, 2120, 760, 22),
+            Rect(4380, 2120, 760, 22),
+            Rect(5320, 2120, 760, 22),
+            Rect(6260, 2120, 760, 22),
+            Rect(7200, 2120, 760, 22),
+            Rect(8140, 2120, 760, 22),
+            Rect(9080, 2120, 760, 22),
+            Rect(10020, 2120, 760, 22),
+            Rect(10960, 2120, 760, 22),
+            Rect(11900, 2120, 760, 22),
+            Rect(12840, 2120, 760, 22),
+            Rect(13780, 2120, 760, 22),
+            Rect(14720, 2120, 760, 22),
+            Rect(1740, 2380, 1200, 22),
+            Rect(3220, 2380, 1220, 22),
+            Rect(4720, 2380, 1160, 22),
+            Rect(6120, 2380, 1240, 22),
+            Rect(7620, 2380, 1160, 22),
+            Rect(9000, 2380, 1260, 22),
+            Rect(10520, 2380, 1200, 22),
+            Rect(11980, 2380, 1240, 22),
+            Rect(13480, 2380, 1160, 22),
+            Rect(15000, 2380, 1040, 22),
+            Rect(1520, 2660, 15280, 28),
+            Rect(1400, 2920, 15600, 56),
         ]
     )
     return solids
@@ -184,6 +233,13 @@ def build_one_way_platforms() -> list[Rect]:
     for x, y in [(10600, 248), (11400, 176), (12200, 104), (13000, 32), (13800, -40), (14600, -112)]:
         plats.append(Rect(x, y, 560, 12))
 
+    # Underground catwalks through the cavern maze.
+    for x in range(1900, 15500, 880):
+        plats.append(Rect(x, 1730, 420, 12))
+        plats.append(Rect(x + 200, 1990, 360, 12))
+        plats.append(Rect(x + 80, 2250, 380, 12))
+        plats.append(Rect(x + 260, 2510, 340, 12))
+
     return plats
 
 
@@ -218,6 +274,12 @@ def build_ladders() -> list[Rect]:
         ladders.append(Rect(x, -180 + oy, 34, 860))
     for x in [9900, 10660, 11420, 12180, 12940, 13700, 14460, 15220]:
         ladders.append(Rect(x, -430 + oy, 34, 630))
+
+    # Cavern shafts and maze connectors.
+    for x in [3240, 6380, 10080, 13600]:
+        ladders.append(Rect(x, 1390, 34, 1290))
+    for x in [1860, 2340, 2840, 3360, 3920, 4520, 5140, 5760, 6440, 7120, 7780, 8460, 9140, 9820, 10500, 11180, 11860, 12540, 13220, 13900, 14580, 15260]:
+        ladders.append(Rect(x, 1600, 34, 1060))
 
     return ladders
 

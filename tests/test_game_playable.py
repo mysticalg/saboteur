@@ -61,3 +61,16 @@ def test_level_width_supports_many_screen_skyscraper():
     from level_data import WORLD_W
 
     assert WORLD_W >= SCREEN_W * 10
+
+
+def test_has_lower_cavern_maze_layers():
+    solids = build_level()
+    deep_layers = [s for s in solids if s.y >= 1800]
+    assert len(deep_layers) >= 20
+
+
+def test_main_floor_has_access_shafts_to_caverns():
+    solids = build_level()
+    floor_y = SCREEN_H - 44 + WORLD_Y_OFFSET
+    floor_segments = sorted((s.x, s.x + s.w) for s in solids if s.y == floor_y and s.h == 44)
+    assert len(floor_segments) >= 4

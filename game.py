@@ -310,6 +310,20 @@ class SaboteurReplica:
             Enemy(Actor(Rect(12020, 498 + WORLD_Y_OFFSET, 30, 56)), "drone", 11600, 12640, 160, hp=2, max_hp=2),
             Enemy(Actor(Rect(13640, 96, 30, 56)), "boss", 13280, 14440, 126, hp=10, max_hp=10, boss=True),
             Enemy(Actor(Rect(14980, 32, 30, 56)), "boss", 14620, 15620, 134, hp=12, max_hp=12, boss=True),
+            # Lower-cavern ecosystem + hostile underground garrison.
+            Enemy(Actor(Rect(2120, 1808, 28, 40)), "bat", 1900, 3000, 170, hp=1, max_hp=1),
+            Enemy(Actor(Rect(3660, 1808, 28, 40)), "bat", 3320, 4520, 176, hp=1, max_hp=1),
+            Enemy(Actor(Rect(6160, 2068, 30, 44)), "rat", 5820, 6900, 148, hp=2, max_hp=2),
+            Enemy(Actor(Rect(7920, 2068, 30, 44)), "rat", 7560, 8660, 152, hp=2, max_hp=2),
+            Enemy(Actor(Rect(9800, 2328, 34, 40)), "snake", 9420, 10440, 132, hp=2, max_hp=2),
+            Enemy(Actor(Rect(11820, 2328, 34, 40)), "snake", 11420, 12460, 138, hp=2, max_hp=2),
+            Enemy(Actor(Rect(2960, 2322, 30, 56)), "henchman", 2520, 3480, 112, hp=3, max_hp=3),
+            Enemy(Actor(Rect(5480, 2322, 30, 56)), "thug", 5040, 6060, 124, hp=4, max_hp=4),
+            Enemy(Actor(Rect(7240, 2322, 30, 56)), "guard", 6840, 7820, 126, hp=3, max_hp=3),
+            Enemy(Actor(Rect(8880, 2322, 30, 56)), "ninja", 8480, 9480, 144, hp=4, max_hp=4),
+            Enemy(Actor(Rect(10620, 2062, 30, 56)), "assassin", 10120, 11180, 156, hp=5, max_hp=5),
+            Enemy(Actor(Rect(12820, 2588, 32, 58)), "robot", 12320, 13500, 108, hp=6, max_hp=6),
+            Enemy(Actor(Rect(14620, 2588, 32, 58)), "robot", 14120, 15380, 112, hp=6, max_hp=6),
         ]
 
         self.projectiles: list[Projectile] = []
@@ -570,13 +584,13 @@ class SaboteurReplica:
                     self.player.actor.rect.x = max(40, self.player.actor.rect.x - 70)
             dist = abs((e.actor.rect.x + e.actor.rect.w / 2) - (p.x + p.w / 2))
             same_level = abs(e.actor.rect.y - p.y) < 56
-            sight = 360 if e.kind in {"boss", "drone"} else (320 if e.kind == "ninja" else 250)
+            sight = 380 if e.kind in {"boss", "drone", "robot"} else (340 if e.kind in {"ninja", "assassin"} else 260)
             sees_player = self.invisibility_timer <= 0 and not self.hidden and dist < sight
-            if sees_player and same_level and e.attack_cd <= 0 and e.kind in {"ninja", "guard", "drone", "boss"}:
+            if sees_player and same_level and e.attack_cd <= 0 and e.kind in {"ninja", "guard", "drone", "boss", "assassin", "henchman", "robot"}:
                 sign = -1 if p.x < e.actor.rect.x else 1
-                proj_speed = 620 if e.kind == "boss" else (580 if e.kind == "drone" else 540)
+                proj_speed = 640 if e.kind == "boss" else (600 if e.kind in {"drone", "robot"} else (560 if e.kind == "assassin" else 540))
                 self.projectiles.append(Projectile(Rect(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 18, 12, 12), proj_speed * sign, 1.1, "enemy"))
-                e.attack_cd = 0.9 if e.kind == "boss" else 1.5
+                e.attack_cd = 0.85 if e.kind == "boss" else (1.1 if e.kind == "assassin" else 1.5)
 
     def _collect_items(self) -> None:
         p = self.player.actor.rect
@@ -947,21 +961,37 @@ class SaboteurReplica:
         for e in self.enemies:
             if not e.alive:
                 continue
-            if e.kind in {"guard", "heavy"}:
+            if e.kind in {"guard", "heavy", "henchman", "thug"}:
                 moving = abs(e.actor.vx) > 1
                 self._draw_character_animated(e.actor.rect, self.sprites.guard, e.speed < 0, moving=moving, fast=abs(e.speed) > 110, airborne=not e.actor.on_ground)
                 if e.kind == "heavy":
                     pygame.draw.rect(self.screen, (90, 90, 105), pygame.Rect(e.actor.rect.x - self.camera_x - 2, e.actor.rect.y - self.camera_y - 2, e.actor.rect.w + 4, e.actor.rect.h + 4), width=2, border_radius=3)
-            elif e.kind in {"ninja", "boss", "drone"}:
+                if e.kind == "henchman":
+                    pygame.draw.rect(self.screen, (82, 120, 168), pygame.Rect(e.actor.rect.x - self.camera_x - 2, e.actor.rect.y - self.camera_y + 14, e.actor.rect.w + 4, 6), border_radius=2)
+                if e.kind == "thug":
+                    pygame.draw.rect(self.screen, (128, 92, 70), pygame.Rect(e.actor.rect.x - self.camera_x - 2, e.actor.rect.y - self.camera_y - 2, e.actor.rect.w + 4, e.actor.rect.h + 4), width=2, border_radius=3)
+            elif e.kind in {"ninja", "boss", "drone", "assassin", "robot"}:
                 moving = abs(e.actor.vx) > 1
                 self._draw_character_animated(e.actor.rect, self.sprites.ninja, e.speed < 0, moving=moving, fast=abs(e.speed) > 130, airborne=not e.actor.on_ground)
                 if e.kind == "boss":
                     pygame.draw.rect(self.screen, ORANGE, pygame.Rect(e.actor.rect.x - self.camera_x - 4, e.actor.rect.y - self.camera_y - 4, e.actor.rect.w + 8, e.actor.rect.h + 8), width=2, border_radius=4)
                 if e.kind == "drone":
                     pygame.draw.circle(self.screen, CYAN, (int(e.actor.rect.x - self.camera_x + e.actor.rect.w / 2), int(e.actor.rect.y - self.camera_y - 8)), 7, width=2)
+                if e.kind == "assassin":
+                    pygame.draw.rect(self.screen, PURPLE, pygame.Rect(e.actor.rect.x - self.camera_x - 3, e.actor.rect.y - self.camera_y + 18, e.actor.rect.w + 6, 5), border_radius=2)
+                if e.kind == "robot":
+                    pygame.draw.rect(self.screen, (120, 180, 210), pygame.Rect(e.actor.rect.x - self.camera_x - 2, e.actor.rect.y - self.camera_y - 2, e.actor.rect.w + 4, e.actor.rect.h + 4), width=2, border_radius=3)
             else:
                 moving = abs(e.actor.vx) > 1
                 self._draw_character_animated(e.actor.rect, self.sprites.dog, e.speed < 0, moving=moving, fast=True, airborne=not e.actor.on_ground)
+                cx = int(e.actor.rect.x - self.camera_x + e.actor.rect.w / 2)
+                cy = int(e.actor.rect.y - self.camera_y + e.actor.rect.h / 2)
+                if e.kind == "bat":
+                    pygame.draw.polygon(self.screen, PURPLE, [(cx - 12, cy - 6), (cx, cy - 14), (cx + 12, cy - 6), (cx, cy - 2)])
+                elif e.kind == "rat":
+                    pygame.draw.line(self.screen, (188, 150, 120), (cx + 10, cy + 6), (cx + 20, cy + 10), 2)
+                elif e.kind == "snake":
+                    pygame.draw.arc(self.screen, GREEN, pygame.Rect(cx - 14, cy - 8, 28, 16), 0.2, 2.8, 3)
 
         for p in self.projectiles:
             self._draw_spinning_shuriken(p.rect)

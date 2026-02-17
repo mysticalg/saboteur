@@ -5,10 +5,10 @@
 A full-featured **Saboteur-style ninja action game** implemented in Python with a massive traversable map. The game supports optional pre-rendered sprite overrides generated through OpenAI Images.
 
 This version now includes:
-- Massive multi-layer complex (shore entry, basement lines, ladders, one-way floors)
+- Massive multi-layer complex (shore entry, basement lines, ladders, one-way floors, lower cavern maze)
 - Stealth traversal options (bush hiding, swim approach, moving train corridor)
 - Classic mission items (bomb + codes + extra collectibles)
-- Ninja enemies, guards, and dog patrols
+- Expanded enemy roster: bats, rats, snakes, guards, ninjas, henchmen, assassins, thugs, robots
 - Melee + shuriken combat
 - 60 FPS animation pass (character bob/sway + spinning shuriken + terminal flicker)
 - 1-hour mission timer, terminal defuse, and extraction objective
