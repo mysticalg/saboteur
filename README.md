@@ -1,14 +1,14 @@
 # Saboteur Replica (Python / pygame)
 
-A full-featured **Saboteur-style ninja action game** implemented in Python with handcrafted pixel-art sprites and a validated traversable map path.
+A full-featured **Saboteur-style ninja action game** implemented in Python with a massive traversable map. The game supports optional pre-rendered sprite overrides generated through OpenAI Images.
 
 This version now includes:
-- Multi-zone compound map (7 connected zones)
-- Classic mission items (bomb + keycard/codes + extra collectibles)
-- Ninja enemies, guards, dog patrols
-- Melee fighting moves (punch, kick, flying kick)
-- Thrown shuriken combat for player and ninjas
-- Bomb timer, terminal defuse, and extraction objective
+- Massive multi-layer complex (shore entry, basement lines, ladders, one-way floors)
+- Stealth traversal options (bush hiding, swim approach, moving train corridor)
+- Classic mission items (bomb + codes + extra collectibles)
+- Ninja enemies, guards, and dog patrols
+- Melee + shuriken combat
+- 1-hour mission timer, terminal defuse, and extraction objective
 
 ## Install & Run
 
@@ -45,3 +45,31 @@ You fail if health reaches 0 or the timer expires.
 
 - The project includes an automated level-connectivity test that validates there is a route from the spawn side to extraction.
 - Core simulation logic is covered by unit tests for collision and bomb mission rules.
+
+
+## OpenAI pre-rendered sprite pipeline
+
+You can generate high-detail sprite PNGs with OpenAI and drop them into `assets/generated/`.
+When present, the game automatically loads these files instead of the procedural fallback art:
+
+- `player.png`
+- `guard.png`
+- `ninja.png`
+- `dog.png`
+- `terminal.png`
+- `shuriken.png`
+- `ladder.png`
+- `train.png`
+- `dinghy.png`
+
+Generate them with:
+
+```bash
+OPENAI_API_KEY=your_key_here python scripts/generate_openai_sprites.py
+```
+
+Then run the game normally:
+
+```bash
+python game.py
+```
