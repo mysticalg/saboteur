@@ -25,6 +25,7 @@ python game.py
 ### Splash / Options
 - Start mission: `Enter` (or `Space`) from splash
 - Open options: `O` from splash
+- In options: `B` opens browser to OpenAI sign-in/key page, `K` edits/saves API key, `G` generates sprites
 - Toggle OpenAI sprite mode in options: `Left/Right`, `Enter`, or `Space`
 - Back from options: `Esc`, `Backspace`, or `O`
 
@@ -63,6 +64,7 @@ Short answer: **No, not to play the game.**
 - The game runs without OpenAI and will use built-in procedural sprites by default/fallback.
 - You only need an OpenAI API key if you want to **generate new PNG sprite files** via `scripts/generate_openai_sprites.py`.
 - Once PNGs are generated into `assets/generated/`, the game can load them locally (no live API call while playing).
+- The in-game browser flow assists sign-in and key creation; OpenAI image API still uses an API key for generation.
 
 ## OpenAI pre-rendered sprite pipeline
 

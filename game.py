@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import math
+import os
 import random
 import sys
+import urllib.request
+import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -43,6 +48,8 @@ CYAN = (98, 225, 225)
 ORANGE = (245, 160, 90)
 PURPLE = (126, 96, 225)
 GOLD = (236, 198, 72)
+OPENAI_IMAGE_MODEL = "gpt-image-1"
+OPENAI_TOKEN_FILE = Path.home() / ".saboteur_openai_api_key"
 
 
 @dataclass
@@ -237,6 +244,9 @@ class SaboteurReplica:
         self.use_openai_sprites = True
         self.generated_assets_present = SpriteBank.generated_assets_ready()
         self.sprites = SpriteBank(use_generated_assets=self.use_openai_sprites)
+        self.openai_api_key = self._load_api_key()
+        self.options_status = ""
+        self.options_input_mode = False
         self.solids = build_level()
         self.one_way = build_one_way_platforms()
         self.ladders = build_ladders()
@@ -338,8 +348,29 @@ class SaboteurReplica:
                 continue
 
             if self.state == "options":
-                if event.key in {pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN, pygame.K_SPACE}:
+                if self.options_input_mode:
+                    if event.key == pygame.K_RETURN:
+                        self._save_api_key(self.openai_api_key)
+                        self.options_input_mode = False
+                        self.options_status = "API key saved locally."
+                    elif event.key == pygame.K_ESCAPE:
+                        self.options_input_mode = False
+                    elif event.key == pygame.K_BACKSPACE:
+                        self.openai_api_key = self.openai_api_key[:-1]
+                    else:
+                        if event.unicode and event.unicode.isprintable():
+                            self.openai_api_key += event.unicode
+                    continue
+
+                if event.key in {pygame.K_LEFT, pygame.K_RIGHT}:
                     self._toggle_sprite_mode()
+                elif event.key in {pygame.K_g}:
+                    self._generate_sprites_from_openai()
+                elif event.key in {pygame.K_b}:
+                    self._open_openai_browser_oauth()
+                elif event.key in {pygame.K_k}:
+                    self.options_input_mode = True
+                    self.options_status = "Type/paste key, press Enter to save."
                 elif event.key in {pygame.K_ESCAPE, pygame.K_BACKSPACE, pygame.K_o}:
                     self.state = "splash"
                 continue
@@ -727,17 +758,79 @@ class SaboteurReplica:
 
         self.screen.blit(self.sprites.dinghy, (24 - self.camera_x * 0.03, SCREEN_H - 120))
 
+    def _load_api_key(self) -> str:
+        if OPENAI_TOKEN_FILE.exists():
+            return OPENAI_TOKEN_FILE.read_text(encoding="utf-8").strip()
+        return os.environ.get("OPENAI_API_KEY", "").strip()
+
+    def _save_api_key(self, key: str) -> None:
+        OPENAI_TOKEN_FILE.write_text(key.strip(), encoding="utf-8")
+
+    def _open_openai_browser_oauth(self) -> None:
+        webbrowser.open("https://platform.openai.com/settings/organization/api-keys")
+        self.options_status = "Browser opened: sign in and create key, then paste with K."
+
+    def _generate_sprites_from_openai(self) -> None:
+        api_key = self.openai_api_key.strip()
+        if not api_key:
+            self.options_status = "No API key set. Press K to paste a key."
+            return
+
+        sprites = {
+            "player.png": {"size": "1024x1024", "prompt": "single full-body stealth operative sprite, side-on platformer style, edgy tactical outfit, photorealistic PBR textures, dramatic cinematic lighting, transparent background, no text"},
+            "guard.png": {"size": "1024x1024", "prompt": "single full-body security guard sprite, side-on platformer style, hardened urban gear, photorealistic textures, transparent background, pre-rendered game art, no text"},
+            "ninja.png": {"size": "1024x1024", "prompt": "single full-body elite ninja enemy sprite, side-on platformer style, edgy dark armor, photorealistic material detail, transparent background, pre-rendered game art, no text"},
+            "dog.png": {"size": "1024x1024", "prompt": "single guard dog sprite, side-on platformer style, photorealistic fur texture and harness, transparent background, pre-rendered game art, no text"},
+            "terminal.png": {"size": "1024x1024", "prompt": "single sci-fi hacking terminal object sprite, side-on platformer style, realistic metal wear and emissive screens, transparent background, pre-rendered game art"},
+            "shuriken.png": {"size": "1024x1024", "prompt": "single shuriken weapon sprite, centered, brushed steel photoreal detail, transparent background, pre-rendered game art"},
+            "ladder.png": {"size": "1024x1024", "prompt": "single metal ladder module sprite for platform game, industrial grime and paint wear, transparent background, pre-rendered game art"},
+            "train.png": {"size": "1536x1024", "prompt": "single side-view futuristic train car sprite for stealth platform game, gritty photorealistic materials and reflections, transparent background, pre-rendered game art"},
+            "dinghy.png": {"size": "1024x1024", "prompt": "single inflatable dinghy boat sprite, side view, photorealistic rubber and wet surface detail, transparent background, pre-rendered game art"},
+        }
+
+        out_dir = Path("assets/generated")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            for filename, spec in sprites.items():
+                payload = {
+                    "model": OPENAI_IMAGE_MODEL,
+                    "prompt": spec["prompt"],
+                    "size": spec["size"],
+                    "background": "transparent",
+                    "quality": "high",
+                }
+                request = urllib.request.Request(
+                    url="https://api.openai.com/v1/images/generations",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(request, timeout=120) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                png = base64.b64decode(data["data"][0]["b64_json"])
+                (out_dir / filename).write_bytes(png)
+        except Exception as exc:
+            self.options_status = f"Generation failed: {exc}"[:120]
+            return
+
+        self.generated_assets_present = SpriteBank.generated_assets_ready()
+        self.sprites = SpriteBank(use_generated_assets=self.use_openai_sprites)
+        self.options_status = "Sprites generated and loaded from assets/generated/."
+
     def _toggle_sprite_mode(self) -> None:
         self.use_openai_sprites = not self.use_openai_sprites
         self.generated_assets_present = SpriteBank.generated_assets_ready()
         self.sprites = SpriteBank(use_generated_assets=self.use_openai_sprites)
+        self.openai_api_key = self._load_api_key()
+        self.options_status = ""
+        self.options_input_mode = False
 
     def _draw_splash(self) -> None:
         self.screen.fill((8, 10, 18))
         title = self.big.render("SABOTEUR REPLICA", True, (236, 238, 248))
         subtitle = self.medium.render("Vertical + Horizontal Infiltration", True, (136, 196, 214))
         hint1 = self.font.render("ENTER = Start Mission", True, (220, 220, 230))
-        hint2 = self.font.render("O = Options", True, (220, 220, 230))
+        hint2 = self.font.render("O = Options (OpenAI connect + generate)", True, (220, 220, 230))
         hint3 = self.font.render("Q / ESC = Quit", True, (190, 190, 205))
         mode = "ON (generated if files exist)" if self.use_openai_sprites else "OFF (procedural art only)"
         status = self.font.render(f"OpenAI sprites: {mode}", True, (120, 226, 170))
@@ -761,14 +854,21 @@ class SaboteurReplica:
         row2 = self.font.render(mode_desc, True, (212, 214, 224))
         files = "All required files found." if self.generated_assets_present else "Generated files missing (game will fallback safely)."
         row3 = self.font.render(files, True, (182, 192, 212))
-        help1 = self.font.render("LEFT/RIGHT or ENTER: toggle", True, (220, 220, 230))
-        help2 = self.font.render("ESC/BACKSPACE/O: back", True, (220, 220, 230))
-        self.screen.blit(title, (SCREEN_W // 2 - title.get_width() // 2, 150))
-        self.screen.blit(row, (SCREEN_W // 2 - row.get_width() // 2, 290))
-        self.screen.blit(row2, (SCREEN_W // 2 - row2.get_width() // 2, 332))
-        self.screen.blit(row3, (SCREEN_W // 2 - row3.get_width() // 2, 360))
-        self.screen.blit(help1, (SCREEN_W // 2 - help1.get_width() // 2, 470))
-        self.screen.blit(help2, (SCREEN_W // 2 - help2.get_width() // 2, 502))
+        masked = (self.openai_api_key[:6] + "..." + self.openai_api_key[-4:]) if len(self.openai_api_key) > 12 else ("(set)" if self.openai_api_key else "(not set)")
+        token_line = self.font.render(f"API key: {masked}", True, (210, 214, 230))
+        oauth_line = self.font.render("B: Open browser login/key page  K: Edit key  G: Generate sprites now", True, (220, 220, 230))
+        mode_line = self.font.render("(OpenAI API does not provide direct OAuth token handoff here; browser assists sign-in.)", True, (170, 180, 205))
+        status_line = self.font.render(self.options_status or "", True, (120, 226, 170))
+        help2 = self.font.render("LEFT/RIGHT: toggle sprite mode   ESC/BACKSPACE/O: back", True, (220, 220, 230))
+        self.screen.blit(title, (SCREEN_W // 2 - title.get_width() // 2, 120))
+        self.screen.blit(row, (SCREEN_W // 2 - row.get_width() // 2, 240))
+        self.screen.blit(row2, (SCREEN_W // 2 - row2.get_width() // 2, 282))
+        self.screen.blit(row3, (SCREEN_W // 2 - row3.get_width() // 2, 312))
+        self.screen.blit(token_line, (SCREEN_W // 2 - token_line.get_width() // 2, 360))
+        self.screen.blit(oauth_line, (SCREEN_W // 2 - oauth_line.get_width() // 2, 398))
+        self.screen.blit(mode_line, (SCREEN_W // 2 - mode_line.get_width() // 2, 428))
+        self.screen.blit(status_line, (SCREEN_W // 2 - status_line.get_width() // 2, 462))
+        self.screen.blit(help2, (SCREEN_W // 2 - help2.get_width() // 2, 514))
         pygame.display.flip()
 
     def _draw_pickup(self, item: Pickup) -> None:
