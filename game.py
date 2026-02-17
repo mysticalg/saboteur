@@ -10,6 +10,7 @@ import random
 import sys
 import urllib.request
 import webbrowser
+from urllib.error import HTTPError
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -233,6 +234,10 @@ class SpriteBank:
 class SaboteurReplica:
     def __init__(self) -> None:
         pygame.init()
+        try:
+            pygame.scrap.init()
+        except pygame.error:
+            pass
         self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
         pygame.display.set_caption("Saboteur Replica - Massive Compound")
         self.clock = pygame.time.Clock()
@@ -247,6 +252,7 @@ class SaboteurReplica:
         self.openai_api_key = self._load_api_key()
         self.options_status = ""
         self.options_input_mode = False
+        self.options_reveal_key = False
         self.solids = build_level()
         self.one_way = build_one_way_platforms()
         self.ladders = build_ladders()
@@ -349,14 +355,25 @@ class SaboteurReplica:
 
             if self.state == "options":
                 if self.options_input_mode:
+                    ctrl_down = bool(event.mod & (pygame.KMOD_CTRL | pygame.KMOD_META))
                     if event.key == pygame.K_RETURN:
                         self._save_api_key(self.openai_api_key)
                         self.options_input_mode = False
                         self.options_status = "API key saved locally."
                     elif event.key == pygame.K_ESCAPE:
                         self.options_input_mode = False
+                        self.options_reveal_key = False
                     elif event.key == pygame.K_BACKSPACE:
                         self.openai_api_key = self.openai_api_key[:-1]
+                    elif event.key == pygame.K_v and ctrl_down:
+                        pasted = self._read_clipboard_text()
+                        if pasted:
+                            self.openai_api_key += pasted.strip()
+                            self.options_status = "Pasted API key text from clipboard."
+                        else:
+                            self.options_status = "Clipboard paste unavailable (try terminal/env var)."
+                    elif event.key == pygame.K_TAB:
+                        self.options_reveal_key = not self.options_reveal_key
                     else:
                         if event.unicode and event.unicode.isprintable():
                             self.openai_api_key += event.unicode
@@ -370,7 +387,8 @@ class SaboteurReplica:
                     self._open_openai_browser_oauth()
                 elif event.key in {pygame.K_k}:
                     self.options_input_mode = True
-                    self.options_status = "Type/paste key, press Enter to save."
+                    self.options_reveal_key = False
+                    self.options_status = "Type key, Ctrl+V to paste, Tab to show/hide, Enter to save."
                 elif event.key in {pygame.K_ESCAPE, pygame.K_BACKSPACE, pygame.K_o}:
                     self.state = "splash"
                 continue
@@ -758,6 +776,17 @@ class SaboteurReplica:
 
         self.screen.blit(self.sprites.dinghy, (24 - self.camera_x * 0.03, SCREEN_H - 120))
 
+    def _read_clipboard_text(self) -> str:
+        try:
+            if not pygame.scrap.get_init():
+                pygame.scrap.init()
+            raw = pygame.scrap.get(pygame.SCRAP_TEXT)
+            if not raw:
+                return ""
+            return raw.decode("utf-8", errors="ignore").replace("\x00", "").strip()
+        except Exception:
+            return ""
+
     def _load_api_key(self) -> str:
         if OPENAI_TOKEN_FILE.exists():
             return OPENAI_TOKEN_FILE.read_text(encoding="utf-8").strip()
@@ -809,6 +838,15 @@ class SaboteurReplica:
                     data = json.loads(response.read().decode("utf-8"))
                 png = base64.b64decode(data["data"][0]["b64_json"])
                 (out_dir / filename).write_bytes(png)
+        except HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                detail = ""
+            detail = detail.replace("\n", " ")
+            self.options_status = f"Generation failed ({exc.code}): {detail or exc.reason}"[:120]
+            return
         except Exception as exc:
             self.options_status = f"Generation failed: {exc}"[:120]
             return
@@ -854,10 +892,16 @@ class SaboteurReplica:
         row2 = self.font.render(mode_desc, True, (212, 214, 224))
         files = "All required files found." if self.generated_assets_present else "Generated files missing (game will fallback safely)."
         row3 = self.font.render(files, True, (182, 192, 212))
-        masked = (self.openai_api_key[:6] + "..." + self.openai_api_key[-4:]) if len(self.openai_api_key) > 12 else ("(set)" if self.openai_api_key else "(not set)")
-        token_line = self.font.render(f"API key: {masked}", True, (210, 214, 230))
-        oauth_line = self.font.render("B: Open browser login/key page  K: Edit key  G: Generate sprites now", True, (220, 220, 230))
-        mode_line = self.font.render("(OpenAI API does not provide direct OAuth token handoff here; browser assists sign-in.)", True, (170, 180, 205))
+        if self.options_input_mode:
+            token_value = self.openai_api_key if self.options_reveal_key else ("*" * len(self.openai_api_key))
+            token_preview = token_value if token_value else "(empty)"
+            token_title = "API key (editing):"
+        else:
+            token_preview = (self.openai_api_key[:6] + "..." + self.openai_api_key[-4:]) if len(self.openai_api_key) > 12 else ("(set)" if self.openai_api_key else "(not set)")
+            token_title = "API key:"
+        token_line = self.font.render(f"{token_title} {token_preview}", True, (210, 214, 230))
+        oauth_line = self.font.render("B: Browser key page  K: Edit key  G: Generate sprites", True, (220, 220, 230))
+        mode_line = self.font.render("(During key edit: Ctrl+V paste, Tab show/hide key, Enter save, Esc cancel.)", True, (170, 180, 205))
         status_line = self.font.render(self.options_status or "", True, (120, 226, 170))
         help2 = self.font.render("LEFT/RIGHT: toggle sprite mode   ESC/BACKSPACE/O: back", True, (220, 220, 230))
         self.screen.blit(title, (SCREEN_W // 2 - title.get_width() // 2, 120))

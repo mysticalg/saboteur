@@ -39,6 +39,7 @@ python game.py
 - Start mission: `Enter` (or `Space`) from splash
 - Open options: `O` from splash
 - In options: `B` opens browser to OpenAI sign-in/key page, `K` edits/saves API key, `G` generates sprites
+- While editing API key (`K`): `Ctrl+V` paste, `Tab` show/hide key text, `Enter` save, `Esc` cancel
 - Toggle OpenAI sprite mode in options: `Left/Right`, `Enter`, or `Space`
 - Back from options: `Esc`, `Backspace`, or `O`
 
@@ -97,7 +98,17 @@ When present, the game automatically loads these files instead of the procedural
 Generate them with:
 
 ```bash
+# macOS / Linux
 OPENAI_API_KEY=your_key_here python scripts/generate_openai_sprites.py
+
+# Windows PowerShell
+$env:OPENAI_API_KEY="your_key_here"; python scripts/generate_openai_sprites.py
+
+# Windows CMD
+set OPENAI_API_KEY=your_key_here && python scripts/generate_openai_sprites.py
+
+# Cross-platform alternative
+python scripts/generate_openai_sprites.py --api-key your_key_here
 ```
 
 Then run the game normally:
