@@ -53,6 +53,48 @@ OPENAI_IMAGE_MODEL = "gpt-image-1"
 OPENAI_TOKEN_FILE = Path.home() / ".saboteur_openai_api_key"
 
 
+ENEMY_XP = {
+    "bat": 6,
+    "rat": 7,
+    "snake": 8,
+    "dog": 8,
+    "guard": 10,
+    "henchman": 11,
+    "thug": 12,
+    "ninja": 13,
+    "assassin": 16,
+    "heavy": 18,
+    "drone": 18,
+    "robot": 20,
+    "boss": 40,
+}
+
+
+def xp_to_next_level(level: int) -> int:
+    return 70 + (level - 1) * 35
+
+
+def weapon_profile(name: str) -> dict[str, float]:
+    profiles: dict[str, dict[str, float]] = {
+        "fists": {"melee": 1.0, "ranged": 0.0, "energy": 4.0, "ammo": 0.0, "fire_cd": 0.0},
+        "bat": {"melee": 1.4, "ranged": 0.0, "energy": 5.0, "ammo": 0.0, "fire_cd": 0.0},
+        "stick": {"melee": 1.2, "ranged": 0.0, "energy": 4.5, "ammo": 0.0, "fire_cd": 0.0},
+        "brick": {"melee": 1.3, "ranged": 0.0, "energy": 5.0, "ammo": 0.0, "fire_cd": 0.0},
+        "pole": {"melee": 1.35, "ranged": 0.0, "energy": 5.5, "ammo": 0.0, "fire_cd": 0.0},
+        "nunchukas": {"melee": 1.6, "ranged": 0.0, "energy": 6.5, "ammo": 0.0, "fire_cd": 0.0},
+        "sais": {"melee": 1.55, "ranged": 0.0, "energy": 6.0, "ammo": 0.0, "fire_cd": 0.0},
+        "sword": {"melee": 1.85, "ranged": 0.0, "energy": 7.0, "ammo": 0.0, "fire_cd": 0.0},
+        "gun": {"melee": 1.0, "ranged": 1.0, "energy": 2.0, "ammo": 30.0, "fire_cd": 0.34},
+        "machine_gun": {"melee": 0.9, "ranged": 0.8, "energy": 2.8, "ammo": 70.0, "fire_cd": 0.13},
+        "silencer": {"melee": 1.0, "ranged": 1.2, "energy": 1.8, "ammo": 28.0, "fire_cd": 0.28},
+    }
+    return profiles.get(name, profiles["fists"])
+
+
+def meditate_recovery_per_sec(level: int) -> float:
+    return 16.0 + min(14.0, (level - 1) * 1.4)
+
+
 @dataclass
 class Enemy:
     actor: Actor
@@ -130,6 +172,21 @@ class Particle:
     life: float
     color: tuple[int, int, int]
     size: int
+
+
+@dataclass
+class ElevatorCar:
+    rect: Rect
+    y_min: float
+    y_max: float
+    speed: float
+
+
+@dataclass
+class GrappleLine:
+    start: tuple[float, float]
+    end: tuple[float, float]
+    ttl: float
 
 
 class SpriteBank:
@@ -272,6 +329,18 @@ class SaboteurReplica:
         self.invisibility_timer = 0.0
         self.invincibility_timer = 0.0
         self.speed_timer = 0.0
+        self.level = 1
+        self.xp = 0
+        self.next_level_xp = xp_to_next_level(self.level)
+        self.grapple_bonus = 0.0
+        self.grapple_line: GrappleLine | None = None
+        self.energy = 100.0
+        self.max_energy = 100.0
+        self.meditating = False
+        self.weapons_owned: set[str] = {"fists", "bat"}
+        self.current_weapon = "bat"
+        self.weapon_ammo: dict[str, int] = {"gun": 0, "machine_gun": 0, "silencer": 0}
+        self.ranged_cd = 0.0
 
         self.bomb = Bomb(seconds_left=3600)
         self.rules = GameRules(self.bomb)
@@ -280,22 +349,40 @@ class SaboteurReplica:
             Pickup("time_bomb", Rect(1520, 578 + WORLD_Y_OFFSET, 22, 22), RED),
             Pickup("keycard", Rect(3220, 638 + WORLD_Y_OFFSET, 22, 22), BLUE),
             Pickup("train_token", Rect(6190, 638 + WORLD_Y_OFFSET, 22, 22), CYAN),
-            Pickup("engineering_codes", Rect(8060, 338 + WORLD_Y_OFFSET, 22, 22), YELLOW),
-            Pickup("vault_relay", Rect(9460, 248 + WORLD_Y_OFFSET, 22, 22), ORANGE),
+            Pickup("engineering_codes", Rect(10320, 210 + WORLD_Y_OFFSET, 22, 22), YELLOW),
+            Pickup("vault_relay", Rect(14120, -84 + WORLD_Y_OFFSET, 22, 22), ORANGE),
+            Pickup("silo_overrides", Rect(6200, 2460, 22, 22), RED),
         ]
-        self.terminal = Rect(9120, 290 + WORLD_Y_OFFSET, 34, 48)
-        self.exit_pad = Rect(9630, 306 + WORLD_Y_OFFSET, 140, 26)
+        self.weapon_pickups = [
+            Pickup("stick", Rect(1860, 638 + WORLD_Y_OFFSET, 22, 22), (170, 150, 112)),
+            Pickup("brick", Rect(2920, 638 + WORLD_Y_OFFSET, 22, 22), (188, 92, 86)),
+            Pickup("pole", Rect(4180, 638 + WORLD_Y_OFFSET, 22, 22), (186, 166, 104)),
+            Pickup("nunchukas", Rect(7440, 530 + WORLD_Y_OFFSET, 22, 22), (192, 166, 120)),
+            Pickup("sais", Rect(9580, 466 + WORLD_Y_OFFSET, 22, 22), (170, 180, 210)),
+            Pickup("sword", Rect(13140, 102 + WORLD_Y_OFFSET, 22, 22), (208, 214, 226)),
+            Pickup("gun", Rect(5620, 2440, 22, 22), (146, 156, 172)),
+            Pickup("machine_gun", Rect(10940, 2060, 22, 22), (132, 144, 168)),
+            Pickup("silencer", Rect(15240, -250, 22, 22), (112, 136, 166)),
+        ]
+        self.terminal = Rect(14820, -128 + WORLD_Y_OFFSET, 34, 48)
+        self.exit_pad = Rect(15480, -96 + WORLD_Y_OFFSET, 170, 26)
+        self.silo_console = Rect(6240, 2422, 46, 56)
+        self.silo_sabotaged = False
+        self.helicopter_pad = Rect(15120, -236, 980, 16)
+        self.helicopter = Rect(15740, -296, 220, 76)
         self.areas = [
             AreaLabel("SHORE ENTRY", Rect(120, 594 + WORLD_Y_OFFSET, 320, 58), (76, 130, 180)),
             AreaLabel("MAINTENANCE STAIRS", Rect(2860, 586 + WORLD_Y_OFFSET, 420, 58), (110, 130, 155)),
             AreaLabel("MONORAIL ACCESS", Rect(5200, 586 + WORLD_Y_OFFSET, 420, 58), (136, 116, 170)),
-            AreaLabel("SKYSCRAPER SECURITY", Rect(7220, 618 + WORLD_Y_OFFSET, 540, 52), (136, 82, 92)),
-            AreaLabel("STORAGE AREA", Rect(7920, 554 + WORLD_Y_OFFSET, 560, 52), (124, 112, 90)),
-            AreaLabel("SERVER ROOMS", Rect(7580, 426 + WORLD_Y_OFFSET, 580, 52), (80, 132, 146)),
-            AreaLabel("GUARD POSTS", Rect(8440, 362 + WORLD_Y_OFFSET, 540, 52), (144, 96, 96)),
-            AreaLabel("HEADQUARTERS", Rect(8200, 170 + WORLD_Y_OFFSET, 600, 62), (150, 116, 78)),
-            AreaLabel("TOWER CORE", Rect(7620, 280, 700, 52), (108, 102, 120)),
-            AreaLabel("SKY TERRACES", Rect(8120, 118, 640, 48), (96, 136, 142)),
+            AreaLabel("SKYSCRAPER SECURITY", Rect(7220, 618 + WORLD_Y_OFFSET, 580, 52), (136, 82, 92)),
+            AreaLabel("STORAGE AREA", Rect(8960, 554 + WORLD_Y_OFFSET, 620, 52), (124, 112, 90)),
+            AreaLabel("SERVER ROOMS", Rect(10420, 426 + WORLD_Y_OFFSET, 640, 52), (80, 132, 146)),
+            AreaLabel("GUARD POSTS", Rect(11600, 330 + WORLD_Y_OFFSET, 640, 52), (144, 96, 96)),
+            AreaLabel("HEADQUARTERS", Rect(13180, 94 + WORLD_Y_OFFSET, 820, 62), (150, 116, 78)),
+            AreaLabel("TOWER CORE", Rect(9400, 220, 980, 52), (108, 102, 120)),
+            AreaLabel("SKY TERRACES", Rect(12280, 42, 920, 48), (96, 136, 142)),
+            AreaLabel("NUCLEAR SILO", Rect(5560, 2440, 760, 52), (152, 96, 72)),
+            AreaLabel("HELIPAD", Rect(15180, -248, 520, 50), (124, 140, 166)),
         ]
 
 
@@ -305,11 +392,25 @@ class SaboteurReplica:
             Enemy(Actor(Rect(3120, 624 + WORLD_Y_OFFSET, 30, 56)), "guard", 3040, 4440, 120, hp=3, max_hp=3),
             Enemy(Actor(Rect(4860, 414 + WORLD_Y_OFFSET, 30, 56)), "heavy", 4680, 5440, 92, hp=5, max_hp=5),
             Enemy(Actor(Rect(6520, 624 + WORLD_Y_OFFSET, 42, 44)), "dog", 6460, 8040, 152, hp=2, max_hp=2),
-            Enemy(Actor(Rect(8460, 294 + WORLD_Y_OFFSET, 30, 56)), "ninja", 8340, 9400, 146, hp=4, max_hp=4),
-            Enemy(Actor(Rect(7580, 562 + WORLD_Y_OFFSET, 30, 56)), "guard", 7420, 8200, 118, hp=3, max_hp=3),
-            Enemy(Actor(Rect(8780, 498 + WORLD_Y_OFFSET, 30, 56)), "drone", 8600, 9380, 160, hp=2, max_hp=2),
-            Enemy(Actor(Rect(8420, 178, 30, 56)), "boss", 8260, 9000, 126, hp=10, max_hp=10, boss=True),
-            Enemy(Actor(Rect(9180, 114, 30, 56)), "boss", 8960, 9520, 134, hp=12, max_hp=12, boss=True),
+            Enemy(Actor(Rect(9460, 294 + WORLD_Y_OFFSET, 30, 56)), "ninja", 9220, 10400, 146, hp=4, max_hp=4),
+            Enemy(Actor(Rect(10820, 562 + WORLD_Y_OFFSET, 30, 56)), "guard", 10440, 11380, 118, hp=3, max_hp=3),
+            Enemy(Actor(Rect(12020, 498 + WORLD_Y_OFFSET, 30, 56)), "drone", 11600, 12640, 160, hp=2, max_hp=2),
+            Enemy(Actor(Rect(13640, 96, 30, 56)), "boss", 13280, 14440, 126, hp=10, max_hp=10, boss=True),
+            Enemy(Actor(Rect(14980, 32, 30, 56)), "boss", 14620, 15620, 134, hp=12, max_hp=12, boss=True),
+            # Lower-cavern ecosystem + hostile underground garrison.
+            Enemy(Actor(Rect(2120, 1808, 28, 40)), "bat", 1900, 3000, 170, hp=1, max_hp=1),
+            Enemy(Actor(Rect(3660, 1808, 28, 40)), "bat", 3320, 4520, 176, hp=1, max_hp=1),
+            Enemy(Actor(Rect(6160, 2068, 30, 44)), "rat", 5820, 6900, 148, hp=2, max_hp=2),
+            Enemy(Actor(Rect(7920, 2068, 30, 44)), "rat", 7560, 8660, 152, hp=2, max_hp=2),
+            Enemy(Actor(Rect(9800, 2328, 34, 40)), "snake", 9420, 10440, 132, hp=2, max_hp=2),
+            Enemy(Actor(Rect(11820, 2328, 34, 40)), "snake", 11420, 12460, 138, hp=2, max_hp=2),
+            Enemy(Actor(Rect(2960, 2322, 30, 56)), "henchman", 2520, 3480, 112, hp=3, max_hp=3),
+            Enemy(Actor(Rect(5480, 2322, 30, 56)), "thug", 5040, 6060, 124, hp=4, max_hp=4),
+            Enemy(Actor(Rect(7240, 2322, 30, 56)), "guard", 6840, 7820, 126, hp=3, max_hp=3),
+            Enemy(Actor(Rect(8880, 2322, 30, 56)), "ninja", 8480, 9480, 144, hp=4, max_hp=4),
+            Enemy(Actor(Rect(10620, 2062, 30, 56)), "assassin", 10120, 11180, 156, hp=5, max_hp=5),
+            Enemy(Actor(Rect(12820, 2588, 32, 58)), "robot", 12320, 13500, 108, hp=6, max_hp=6),
+            Enemy(Actor(Rect(14620, 2588, 32, 58)), "robot", 14120, 15380, 112, hp=6, max_hp=6),
         ]
 
         self.projectiles: list[Projectile] = []
@@ -326,6 +427,12 @@ class SaboteurReplica:
         track_y, self.train_min_x, self.train_max_x = build_train_track()
         self.train_rect = Rect(self.train_min_x, track_y - 58, 180, 64)
         self.train_speed = 150.0
+        self.elevators = [
+            ElevatorCar(Rect(7480, 610 + WORLD_Y_OFFSET, 52, 22), 150 + WORLD_Y_OFFSET, 650 + WORLD_Y_OFFSET, -96.0),
+            ElevatorCar(Rect(9800, 610 + WORLD_Y_OFFSET, 52, 22), 130 + WORLD_Y_OFFSET, 650 + WORLD_Y_OFFSET, -102.0),
+            ElevatorCar(Rect(12060, 610 + WORLD_Y_OFFSET, 52, 22), 30 + WORLD_Y_OFFSET, 650 + WORLD_Y_OFFSET, -108.0),
+            ElevatorCar(Rect(15340, -218, 52, 22), -320, 620 + WORLD_Y_OFFSET, -116.0),
+        ]
 
     def run(self) -> None:
         while True:
@@ -408,36 +515,77 @@ class SaboteurReplica:
             elif event.key == pygame.K_SPACE and (self.player.actor.on_ground or self.player.actor.in_water or self.player.actor.on_ladder):
                 self.player.actor.vy = JUMP_VELOCITY * (0.58 if self.player.actor.in_water else 1.0)
             if event.key == pygame.K_z:
-                self._throw_shuriken()
+                self._use_weapon_fire()
+            if event.key == pygame.K_TAB:
+                self._cycle_weapon()
+            if event.key == pygame.K_g:
+                self._use_grappling_hook()
             if event.key == pygame.K_x:
                 self._start_melee("punch")
             if event.key == pygame.K_c:
                 self._start_melee("kick")
             if event.key == pygame.K_v:
                 self._start_melee("flying_kick")
-            if event.key == pygame.K_e and self.player.actor.rect.intersects(self.terminal):
-                self.rules.defuse_bomb()
+            if event.key == pygame.K_e:
+                if self.player.actor.rect.intersects(self.terminal):
+                    self.rules.defuse_bomb()
+                if self.player.actor.rect.intersects(self.silo_console) and self.player.has_bomb and self.player.has_codes:
+                    self.silo_sabotaged = True
             if event.key == pygame.K_ESCAPE:
                 self.state = "splash"
 
-    def _throw_shuriken(self) -> None:
-        if self.player.shots <= 0:
+    def _cycle_weapon(self) -> None:
+        owned = sorted(self.weapons_owned)
+        if not owned:
             return
+        i = owned.index(self.current_weapon) if self.current_weapon in owned else 0
+        self.current_weapon = owned[(i + 1) % len(owned)]
+
+    def _use_weapon_fire(self) -> None:
+        weapon = weapon_profile(self.current_weapon)
+        if weapon["ranged"] <= 0:
+            # fallback to classic shuriken throw
+            if self.player.shots <= 0 or self.energy < 3:
+                return
+            p = self.player.actor.rect
+            self.projectiles.append(Projectile(Rect(p.x + p.w / 2, p.y + 24, 12, 12), 700 * self.facing, 1.1, "player"))
+            self.player.shots -= 1
+            self.energy = max(0.0, self.energy - 3)
+            return
+
+        if self.ranged_cd > 0:
+            return
+        ammo = self.weapon_ammo.get(self.current_weapon, 0)
+        if ammo <= 0:
+            return
+        energy_cost = weapon["energy"]
+        if self.energy < energy_cost:
+            return
+
         p = self.player.actor.rect
-        self.projectiles.append(Projectile(Rect(p.x + p.w / 2, p.y + 24, 12, 12), 700 * self.facing, 1.1, "player"))
-        self.player.shots -= 1
+        speed = 760 if self.current_weapon == "machine_gun" else 700
+        ttl = 1.0 if self.current_weapon == "machine_gun" else 1.2
+        self.projectiles.append(Projectile(Rect(p.x + p.w / 2, p.y + 20, 10, 10), speed * self.facing, ttl, "player"))
+        self.weapon_ammo[self.current_weapon] = ammo - 1
+        self.energy = max(0.0, self.energy - energy_cost)
+        self.ranged_cd = weapon["fire_cd"]
 
     def _start_melee(self, style: str) -> None:
         if self.attack_cd > 0:
             return
         p = self.player.actor.rect
         width, height, ttl, dmg = 40, 24, 0.18, 1
+        weapon = weapon_profile(self.current_weapon)
         if style == "kick":
             width, height, ttl, dmg = 54, 24, 0.2, 2
         if style == "flying_kick":
             width, height, ttl, dmg = 68, 28, 0.24, 3
             if self.player.actor.on_ground:
                 self.player.actor.vy = -350
+        dmg = int((dmg + (self.level - 1) // 2) * weapon["melee"])
+        if self.energy < weapon["energy"]:
+            return
+        self.energy = max(0.0, self.energy - weapon["energy"])
         hit_x = p.right if self.facing > 0 else p.left - width
         self.attack = AttackWindow(Rect(hit_x, p.y + 20, width, height), ttl, dmg)
         self.attack_cd = 0.3
@@ -450,10 +598,16 @@ class SaboteurReplica:
         self.invisibility_timer = max(0.0, self.invisibility_timer - dt)
         self.invincibility_timer = max(0.0, self.invincibility_timer - dt)
         self.speed_timer = max(0.0, self.speed_timer - dt)
+        self.ranged_cd = max(0.0, self.ranged_cd - dt)
+        if self.grapple_line:
+            self.grapple_line.ttl -= dt
+            if self.grapple_line.ttl <= 0:
+                self.grapple_line = None
         keys = pygame.key.get_pressed()
 
         speed_boost = 1.45 if self.speed_timer > 0 else 1.0
-        move_speed = RUN_SPEED * speed_boost * (0.58 if self.player.actor.in_water else 1.0)
+        level_speed = 1.0 + (self.level - 1) * 0.03
+        move_speed = RUN_SPEED * level_speed * speed_boost * (0.58 if self.player.actor.in_water else 1.0)
         if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
             move_speed *= 0.55
         self.player.actor.vx = 0
@@ -472,11 +626,17 @@ class SaboteurReplica:
 
         drop_down = self.drop_through_timer > 0 or ((keys[pygame.K_DOWN] or keys[pygame.K_s]) and keys[pygame.K_SPACE])
         self.hidden = keys[pygame.K_DOWN] and any(self.player.actor.rect.intersects(b) for b in self.bushes)
+        self.meditating = bool(keys[pygame.K_m] and self.player.actor.on_ground and abs(self.player.actor.vx) < 8 and abs(self.player.actor.vy) < 18)
+        if self.meditating:
+            self.energy = min(self.max_energy, self.energy + meditate_recovery_per_sec(self.level) * dt)
+        else:
+            self.energy = min(self.max_energy, self.energy + 2.2 * dt)
 
         self.physics.move_actor(self.player.actor, dt, drop_down=drop_down, climb_dir=climb_dir)
         self.player.actor.rect.x = max(0, min(WORLD_W - self.player.actor.rect.w, self.player.actor.rect.x))
         self.player.actor.rect.y = max(0, min(WORLD_H - self.player.actor.rect.h, self.player.actor.rect.y))
         self._update_train(dt)
+        self._update_elevators(dt)
         for e in self.enemies:
             e.update(dt, self.physics)
 
@@ -510,6 +670,82 @@ class SaboteurReplica:
             p.y = self.train_rect.top - p.h
             self.player.actor.on_ground = True
 
+    def _update_elevators(self, dt: float) -> None:
+        p = self.player.actor.rect
+        for elevator in self.elevators:
+            old_y = elevator.rect.y
+            elevator.rect.y += elevator.speed * dt
+            if elevator.rect.y <= elevator.y_min:
+                elevator.rect.y = elevator.y_min
+                elevator.speed = abs(elevator.speed)
+            elif elevator.rect.y >= elevator.y_max:
+                elevator.rect.y = elevator.y_max
+                elevator.speed = -abs(elevator.speed)
+
+            standing = (
+                p.bottom <= old_y + 10
+                and p.bottom >= old_y - 8
+                and p.right > elevator.rect.left + 2
+                and p.left < elevator.rect.right - 2
+            )
+            if standing:
+                p.y += elevator.rect.y - old_y
+                p.y = elevator.rect.top - p.h
+                self.player.actor.on_ground = True
+
+    def _grapple_range(self) -> float:
+        return 260.0 + self.grapple_bonus + (self.level - 1) * 35.0
+
+    def _award_xp(self, amount: int) -> None:
+        self.xp += amount
+        while self.xp >= self.next_level_xp:
+            self.xp -= self.next_level_xp
+            self.level += 1
+            self.grapple_bonus += 18.0
+            self.next_level_xp = xp_to_next_level(self.level)
+            self._emit_particles(self.player.actor.rect.x + 16, self.player.actor.rect.y + 16, GOLD, 20)
+
+    def _on_enemy_defeated(self, enemy: Enemy) -> None:
+        self._spawn_enemy_drop(enemy)
+        self._award_xp(ENEMY_XP.get(enemy.kind, 10))
+
+    def _use_grappling_hook(self) -> None:
+        if self.energy < 14:
+            return
+        self.energy = max(0.0, self.energy - 14)
+        p = self.player.actor.rect
+        start = (p.x + p.w / 2, p.y + 16)
+        max_range = self._grapple_range()
+        direction = 1 if self.facing > 0 else -1
+        target_x = start[0] + direction * max_range
+        target_y = start[1] - min(210, max_range * 0.55)
+
+        anchor: tuple[float, float] | None = None
+        # Find an anchor point on nearby solid tops.
+        for solid in self.solids:
+            top_y = solid.top
+            if top_y >= start[1]:
+                continue
+            if direction > 0 and solid.left < start[0]:
+                continue
+            if direction < 0 and solid.right > start[0]:
+                continue
+            ax = solid.left if direction > 0 else solid.right
+            dx = ax - start[0]
+            dy = top_y - start[1]
+            if dx * dx + dy * dy <= max_range * max_range:
+                if anchor is None or abs(dx) < abs(anchor[0] - start[0]):
+                    anchor = (ax, top_y)
+
+        if anchor is None:
+            anchor = (target_x, target_y)
+
+        self.grapple_line = GrappleLine(start=start, end=anchor, ttl=0.2)
+        pull_x = (anchor[0] - start[0]) * 2.4
+        pull_y = (anchor[1] - start[1]) * 2.0
+        self.player.actor.vx = max(-520, min(520, pull_x))
+        self.player.actor.vy = max(-760, min(-220, pull_y))
+
     def _update_attack(self, dt: float) -> None:
         if not self.attack:
             return
@@ -527,7 +763,7 @@ class SaboteurReplica:
                 if e.hp <= 0:
                     e.alive = False
                     self._emit_particles(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 24, ORANGE, 14)
-                    self._spawn_enemy_drop(e)
+                    self._on_enemy_defeated(e)
 
     def _update_projectiles(self, dt: float) -> None:
         alive: list[Projectile] = []
@@ -554,7 +790,7 @@ class SaboteurReplica:
             if e.hp <= 0:
                 e.alive = False
                 self._emit_particles(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 24, ORANGE, 12)
-                self._spawn_enemy_drop(e)
+                self._on_enemy_defeated(e)
             return True
         return False
 
@@ -570,13 +806,13 @@ class SaboteurReplica:
                     self.player.actor.rect.x = max(40, self.player.actor.rect.x - 70)
             dist = abs((e.actor.rect.x + e.actor.rect.w / 2) - (p.x + p.w / 2))
             same_level = abs(e.actor.rect.y - p.y) < 56
-            sight = 360 if e.kind in {"boss", "drone"} else (320 if e.kind == "ninja" else 250)
+            sight = 380 if e.kind in {"boss", "drone", "robot"} else (340 if e.kind in {"ninja", "assassin"} else 260)
             sees_player = self.invisibility_timer <= 0 and not self.hidden and dist < sight
-            if sees_player and same_level and e.attack_cd <= 0 and e.kind in {"ninja", "guard", "drone", "boss"}:
+            if sees_player and same_level and e.attack_cd <= 0 and e.kind in {"ninja", "guard", "drone", "boss", "assassin", "henchman", "robot"}:
                 sign = -1 if p.x < e.actor.rect.x else 1
-                proj_speed = 620 if e.kind == "boss" else (580 if e.kind == "drone" else 540)
+                proj_speed = 640 if e.kind == "boss" else (600 if e.kind in {"drone", "robot"} else (560 if e.kind == "assassin" else 540))
                 self.projectiles.append(Projectile(Rect(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 18, 12, 12), proj_speed * sign, 1.1, "enemy"))
-                e.attack_cd = 0.9 if e.kind == "boss" else 1.5
+                e.attack_cd = 0.85 if e.kind == "boss" else (1.1 if e.kind == "assassin" else 1.5)
 
     def _collect_items(self) -> None:
         p = self.player.actor.rect
@@ -588,6 +824,15 @@ class SaboteurReplica:
                     self.rules.player_collects_bomb(self.player)
                 elif item.name in {"keycard", "engineering_codes"}:
                     self.rules.player_collects_codes(self.player)
+
+        for wp in self.weapon_pickups:
+            if not wp.taken and p.intersects(wp.rect):
+                wp.taken = True
+                self.weapons_owned.add(wp.name)
+                if wp.name in self.weapon_ammo:
+                    self.weapon_ammo[wp.name] = max(self.weapon_ammo[wp.name], int(weapon_profile(wp.name)["ammo"]))
+                self.current_weapon = wp.name
+                self._emit_particles(wp.rect.x + 11, wp.rect.y + 11, wp.color, 16)
 
     def _update_drops(self, dt: float) -> None:
         alive: list[Drop] = []
@@ -607,12 +852,16 @@ class SaboteurReplica:
             self.drops.append(Drop("invincibility", Rect(cx + 44, cy, 24, 24), ttl=24.0))
             return
 
-        if random.random() < 0.12:
+        if random.random() < 0.16:
             self.drops.append(Drop("gold", Rect(cx, cy, 24, 24)))
 
-        if random.random() < 0.08:
-            kind = random.choice(["invisibility", "invincibility", "speed"])
+        if random.random() < 0.12:
+            kind = random.choice(["invisibility", "invincibility", "speed", "energy_orb"])
             self.drops.append(Drop(kind, Rect(cx + 18, cy, 24, 24)))
+
+        if enemy.kind in {"thug", "henchman", "guard", "ninja", "assassin", "robot"} and random.random() < 0.14:
+            kind = random.choice(["stick", "brick", "pole", "nunchukas", "sais", "sword", "gun", "machine_gun", "silencer"])
+            self.drops.append(Drop(kind, Rect(cx - 20, cy + 12, 24, 24)))
 
     def _collect_drops(self) -> None:
         p = self.player.actor.rect
@@ -633,6 +882,15 @@ class SaboteurReplica:
             elif drop.kind == "speed":
                 self.speed_timer = max(self.speed_timer, 9.0)
                 self._emit_particles(drop.rect.x + 12, drop.rect.y + 12, GREEN, 12)
+            elif drop.kind == "energy_orb":
+                self.energy = min(self.max_energy, self.energy + 38)
+                self._emit_particles(drop.rect.x + 12, drop.rect.y + 12, CYAN, 14)
+            elif drop.kind in {"stick", "brick", "pole", "nunchukas", "sais", "sword", "gun", "machine_gun", "silencer"}:
+                self.weapons_owned.add(drop.kind)
+                if drop.kind in self.weapon_ammo:
+                    self.weapon_ammo[drop.kind] = self.weapon_ammo.get(drop.kind, 0) + 18
+                self.current_weapon = drop.kind
+                self._emit_particles(drop.rect.x + 12, drop.rect.y + 12, ORANGE, 12)
         self.drops = remaining
 
     def _all_mission_items_collected(self) -> bool:
@@ -644,7 +902,8 @@ class SaboteurReplica:
             return
         if self._all_mission_items_collected() and self.player.actor.rect.intersects(self.terminal):
             self.rules.defuse_bomb()
-        if self.rules.can_escape(self.player) and self._all_mission_items_collected() and self.player.actor.rect.intersects(self.exit_pad):
+        helicopter_ready = self.player.actor.rect.intersects(self.helicopter) or self.player.actor.rect.intersects(self.helicopter_pad)
+        if self.rules.can_escape(self.player) and self._all_mission_items_collected() and self.silo_sabotaged and helicopter_ready:
             self.won = True
 
     def _update_particles(self, dt: float) -> None:
@@ -746,6 +1005,10 @@ class SaboteurReplica:
             for y in range(116, 650, 64):
                 pygame.draw.rect(self.screen, (104, 118, 146), pygame.Rect(sx + 6, y - self.camera_y + WORLD_Y_OFFSET, 40, 20), border_radius=2)
 
+        for elevator in self.elevators:
+            pygame.draw.rect(self.screen, (168, 184, 212), pygame.Rect(elevator.rect.x - self.camera_x, elevator.rect.y - self.camera_y, elevator.rect.w, elevator.rect.h), border_radius=3)
+            pygame.draw.rect(self.screen, (52, 58, 74), pygame.Rect(elevator.rect.x - self.camera_x + 3, elevator.rect.y - self.camera_y + 4, elevator.rect.w - 6, elevator.rect.h - 8), border_radius=2)
+
         pygame.draw.rect(self.screen, (84, 96, 128), pygame.Rect(7240 - self.camera_x, 122 - self.camera_y + WORLD_Y_OFFSET, 2220, 8))
         for i in range(7240, 9460, 58):
             pygame.draw.rect(self.screen, (152, 166, 198), pygame.Rect(i - self.camera_x, 126 - self.camera_y + WORLD_Y_OFFSET, 34, 5), border_radius=1)
@@ -770,6 +1033,19 @@ class SaboteurReplica:
             for seg in range(int(ladder.h // 68) + 1):
                 y = ladder.y + seg * 68
                 self.screen.blit(self.sprites.ladder, (ladder.x - self.camera_x, y - self.camera_y))
+
+        # Missile silo and helipad landmarks.
+        pygame.draw.rect(self.screen, (96, 86, 82), pygame.Rect(5520 - self.camera_x, 1900 - self.camera_y, 180, 600), border_radius=10)
+        pygame.draw.rect(self.screen, (198, 82, 70), pygame.Rect(5580 - self.camera_x, 1980 - self.camera_y, 60, 430), border_radius=14)
+        pygame.draw.rect(self.screen, (82, 112, 136), pygame.Rect(self.silo_console.x - self.camera_x, self.silo_console.y - self.camera_y, self.silo_console.w, self.silo_console.h), border_radius=4)
+        silo_txt = "SILO SABOTAGED" if self.silo_sabotaged else "SILO CONSOLE"
+        self.screen.blit(self.font.render(silo_txt, True, (230, 230, 230)), (self.silo_console.x - self.camera_x - 30, self.silo_console.y - self.camera_y - 20))
+
+        pygame.draw.rect(self.screen, (112, 126, 144), pygame.Rect(self.helicopter_pad.x - self.camera_x, self.helicopter_pad.y - self.camera_y, self.helicopter_pad.w, self.helicopter_pad.h), border_radius=3)
+        pygame.draw.circle(self.screen, (232, 232, 236), (int(self.helicopter_pad.x - self.camera_x + self.helicopter_pad.w / 2), int(self.helicopter_pad.y - self.camera_y + 8)), 70, width=3)
+        pygame.draw.rect(self.screen, (68, 90, 114), pygame.Rect(self.helicopter.x - self.camera_x, self.helicopter.y - self.camera_y, self.helicopter.w, self.helicopter.h), border_radius=8)
+        pygame.draw.rect(self.screen, (170, 192, 220), pygame.Rect(self.helicopter.x - self.camera_x + 34, self.helicopter.y - self.camera_y + 18, 120, 20), border_radius=6)
+        pygame.draw.rect(self.screen, (28, 34, 48), pygame.Rect(self.helicopter.x - self.camera_x - 50, self.helicopter.y - self.camera_y + 4, self.helicopter.w + 100, 6), border_radius=2)
 
         self.screen.blit(self.sprites.train, (self.train_rect.x - self.camera_x, self.train_rect.y - self.camera_y))
         pygame.draw.rect(self.screen, (60, 62, 70), pygame.Rect(self.train_min_x - self.camera_x, self.train_rect.y + 58 - self.camera_y, self.train_max_x - self.train_min_x, 6))
@@ -936,35 +1212,62 @@ class SaboteurReplica:
         for item in self.pickups:
             if not item.taken:
                 self._draw_pickup(item)
+        for wp in self.weapon_pickups:
+            if not wp.taken:
+                self._draw_pickup(wp)
 
         terminal_glow = 0.84 + 0.16 * (0.5 + 0.5 * math.sin(self.anim_time * 10.0))
         terminal_frame = self.sprites.terminal.copy()
         terminal_frame.set_alpha(int(255 * terminal_glow))
         self._draw_sprite(self.terminal, terminal_frame)
         pygame.draw.rect(self.screen, ORANGE, pygame.Rect(self.exit_pad.x - self.camera_x, self.exit_pad.y - self.camera_y, self.exit_pad.w, self.exit_pad.h), border_radius=4)
-        self.screen.blit(self.font.render("EXTRACT", True, (22, 22, 24)), (self.exit_pad.x - self.camera_x + 26, self.exit_pad.y - self.camera_y + 2))
+        self.screen.blit(self.font.render("OLD EXIT", True, (22, 22, 24)), (self.exit_pad.x - self.camera_x + 20, self.exit_pad.y - self.camera_y + 2))
 
         for e in self.enemies:
             if not e.alive:
                 continue
-            if e.kind in {"guard", "heavy"}:
+            if e.kind in {"guard", "heavy", "henchman", "thug"}:
                 moving = abs(e.actor.vx) > 1
                 self._draw_character_animated(e.actor.rect, self.sprites.guard, e.speed < 0, moving=moving, fast=abs(e.speed) > 110, airborne=not e.actor.on_ground)
                 if e.kind == "heavy":
                     pygame.draw.rect(self.screen, (90, 90, 105), pygame.Rect(e.actor.rect.x - self.camera_x - 2, e.actor.rect.y - self.camera_y - 2, e.actor.rect.w + 4, e.actor.rect.h + 4), width=2, border_radius=3)
-            elif e.kind in {"ninja", "boss", "drone"}:
+                if e.kind == "henchman":
+                    pygame.draw.rect(self.screen, (82, 120, 168), pygame.Rect(e.actor.rect.x - self.camera_x - 2, e.actor.rect.y - self.camera_y + 14, e.actor.rect.w + 4, 6), border_radius=2)
+                if e.kind == "thug":
+                    pygame.draw.rect(self.screen, (128, 92, 70), pygame.Rect(e.actor.rect.x - self.camera_x - 2, e.actor.rect.y - self.camera_y - 2, e.actor.rect.w + 4, e.actor.rect.h + 4), width=2, border_radius=3)
+            elif e.kind in {"ninja", "boss", "drone", "assassin", "robot"}:
                 moving = abs(e.actor.vx) > 1
                 self._draw_character_animated(e.actor.rect, self.sprites.ninja, e.speed < 0, moving=moving, fast=abs(e.speed) > 130, airborne=not e.actor.on_ground)
                 if e.kind == "boss":
                     pygame.draw.rect(self.screen, ORANGE, pygame.Rect(e.actor.rect.x - self.camera_x - 4, e.actor.rect.y - self.camera_y - 4, e.actor.rect.w + 8, e.actor.rect.h + 8), width=2, border_radius=4)
                 if e.kind == "drone":
                     pygame.draw.circle(self.screen, CYAN, (int(e.actor.rect.x - self.camera_x + e.actor.rect.w / 2), int(e.actor.rect.y - self.camera_y - 8)), 7, width=2)
+                if e.kind == "assassin":
+                    pygame.draw.rect(self.screen, PURPLE, pygame.Rect(e.actor.rect.x - self.camera_x - 3, e.actor.rect.y - self.camera_y + 18, e.actor.rect.w + 6, 5), border_radius=2)
+                if e.kind == "robot":
+                    pygame.draw.rect(self.screen, (120, 180, 210), pygame.Rect(e.actor.rect.x - self.camera_x - 2, e.actor.rect.y - self.camera_y - 2, e.actor.rect.w + 4, e.actor.rect.h + 4), width=2, border_radius=3)
             else:
                 moving = abs(e.actor.vx) > 1
                 self._draw_character_animated(e.actor.rect, self.sprites.dog, e.speed < 0, moving=moving, fast=True, airborne=not e.actor.on_ground)
+                cx = int(e.actor.rect.x - self.camera_x + e.actor.rect.w / 2)
+                cy = int(e.actor.rect.y - self.camera_y + e.actor.rect.h / 2)
+                if e.kind == "bat":
+                    pygame.draw.polygon(self.screen, PURPLE, [(cx - 12, cy - 6), (cx, cy - 14), (cx + 12, cy - 6), (cx, cy - 2)])
+                elif e.kind == "rat":
+                    pygame.draw.line(self.screen, (188, 150, 120), (cx + 10, cy + 6), (cx + 20, cy + 10), 2)
+                elif e.kind == "snake":
+                    pygame.draw.arc(self.screen, GREEN, pygame.Rect(cx - 14, cy - 8, 28, 16), 0.2, 2.8, 3)
 
         for p in self.projectiles:
             self._draw_spinning_shuriken(p.rect)
+
+        if self.grapple_line:
+            sx = self.grapple_line.start[0] - self.camera_x
+            sy = self.grapple_line.start[1] - self.camera_y
+            ex = self.grapple_line.end[0] - self.camera_x
+            ey = self.grapple_line.end[1] - self.camera_y
+            pygame.draw.line(self.screen, (202, 212, 236), (sx, sy), (ex, ey), 2)
+            pygame.draw.circle(self.screen, (228, 236, 248), (int(ex), int(ey)), 4)
 
         for drop in self.drops:
             sx = int(drop.rect.x - self.camera_x + drop.rect.w / 2)
@@ -975,6 +1278,10 @@ class SaboteurReplica:
                 pygame.draw.circle(self.screen, CYAN, (sx, sy), 10, width=3)
             elif drop.kind == "invincibility":
                 pygame.draw.circle(self.screen, YELLOW, (sx, sy), 10, width=3)
+            elif drop.kind == "energy_orb":
+                pygame.draw.circle(self.screen, (120, 240, 240), (sx, sy), 10)
+            elif drop.kind in {"stick", "brick", "pole", "nunchukas", "sais", "sword", "gun", "machine_gun", "silencer"}:
+                pygame.draw.rect(self.screen, (198, 176, 124), pygame.Rect(sx - 10, sy - 6, 20, 12), border_radius=2)
             else:
                 pygame.draw.polygon(self.screen, GREEN, [(sx, sy - 10), (sx + 10, sy), (sx, sy + 10), (sx - 10, sy)])
 
@@ -994,6 +1301,8 @@ class SaboteurReplica:
             self._draw_character_animated(self.player.actor.rect, self.sprites.player, self.facing < 0, moving=moving, fast=abs(self.player.actor.vx) > RUN_SPEED, airborne=not self.player.actor.on_ground)
         if self.hidden:
             self.screen.blit(self.font.render("HIDDEN", True, GREEN), (self.player.actor.rect.x - self.camera_x - 4, self.player.actor.rect.y - self.camera_y - 22))
+        if self.meditating:
+            self.screen.blit(self.font.render("MEDITATING", True, CYAN), (self.player.actor.rect.x - self.camera_x - 10, self.player.actor.rect.y - self.camera_y - 40))
 
         hud = (
             f"ZONE:{min(12, int((self.player.actor.rect.x / WORLD_W) * 12) + 1)}/12 HP:{self.player.health} SHURIKEN:{self.player.shots} "
@@ -1007,7 +1316,12 @@ class SaboteurReplica:
         sprite_mode = "ON" if self.use_openai_sprites else "OFF"
         self.screen.blit(self.font.render(f"OPENAI SPRITES:{sprite_mode}", True, (168, 192, 232)), (14, 112))
         self.screen.blit(self.font.render("ANIMATION:60FPS LOOP", True, (168, 212, 168)), (14, 136))
-        controls = "Move:A/D Jump:Space Drop:Down+Space Climb:W/S Crouch/Hide:Down Sprint:Shift Throw:Z Interact:E ESC:Menu"
+        obj = f"OBJECTIVES SILO:{'DONE' if self.silo_sabotaged else 'PENDING'} HELI:TOP PAD"
+        self.screen.blit(self.font.render(obj, True, (220, 204, 156)), (14, 160))
+        ammo = self.weapon_ammo.get(self.current_weapon, 0) if self.current_weapon in self.weapon_ammo else self.player.shots
+        xp_line = f"LEVEL:{self.level} XP:{self.xp}/{self.next_level_xp} GRAPPLE:{int(self._grapple_range())}px ENERGY:{int(self.energy)} WEAPON:{self.current_weapon.upper()} AMMO:{ammo}"
+        self.screen.blit(self.font.render(xp_line, True, (180, 210, 250)), (14, 184))
+        controls = "Move:A/D Jump:Space Fire:Z Grapple:G Meditate:M Cycle:Tab Interact:E ESC:Menu"
         self.screen.blit(self.font.render(controls, True, (200, 210, 230)), (14, 86))
 
         if self.failed:

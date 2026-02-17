@@ -5,13 +5,13 @@
 A full-featured **Saboteur-style ninja action game** implemented in Python with a massive traversable map. The game supports optional pre-rendered sprite overrides generated through OpenAI Images.
 
 This version now includes:
-- Massive multi-layer complex (shore entry, basement lines, ladders, one-way floors)
+- Massive multi-layer complex (shore entry, basement lines, elevators, ladders, one-way floors, lower cavern maze)
 - Stealth traversal options (bush hiding, swim approach, moving train corridor)
 - Classic mission items (bomb + codes + extra collectibles)
-- Ninja enemies, guards, and dog patrols
-- Melee + shuriken combat
+- Expanded enemy roster: bats, rats, snakes, guards, ninjas, henchmen, assassins, thugs, robots
+- Melee + ranged arsenal (bats, sticks, bricks, poles, nunchukas, sais, swords, gun, machine gun, silencer) + grappling-hook traversal
 - 60 FPS animation pass (character bob/sway + spinning shuriken + terminal flicker)
-- 1-hour mission timer, terminal defuse, and extraction objective
+- 1-hour mission timer, terminal defuse, missile-silo sabotage, helicopter extraction, XP level-up progression, and meditation energy recovery
 
 ## Run with Godot (new)
 
@@ -46,7 +46,13 @@ python game.py
 ### In Mission
 - Move: `A / D` or arrow keys
 - Jump: `Space`
-- Throw shuriken: `Z`
+- Drop through one-way floors: hold `Down` + tap `Space`
+- Climb ladders up/down: `W/S` or `Up/Down`
+- Elevators: ride moving lift cars in tower shafts
+- Fire equipped weapon: `Z`
+- Grappling hook: `G` (range increases as you level up)
+- Cycle weapons: `Tab`
+- Meditate to recover energy: hold `M` while grounded and still
 - Punch: `X`
 - Kick: `C`
 - Flying kick: `V`
@@ -60,9 +66,10 @@ python game.py
 2. Collect the `keycard` (codes).
 3. Collect all remaining mission items.
 4. Defuse at the terminal.
-5. Reach the extraction pad.
+5. Sabotage the nuclear missile silo at the silo console.
+6. Escape from the top helipad helicopter.
 
-You fail if health reaches 0 or the timer expires.
+You fail if health reaches 0 or the timer expires. Defeating enemies grants varied XP and loot drops; each level makes you slightly faster/stronger and extends grappling-hook range. Meditating restores combat energy.
 
 
 ## Playability checks

@@ -46,3 +46,17 @@ def test_drop_down_through_one_way_platform_when_requested():
         physics.move_actor(actor, 0.05, drop_down=True)
     assert actor.rect.top > one_way.top
     assert actor.on_ground is False
+
+
+def test_ladder_climb_down_can_pass_through_one_way_platform():
+    one_way = Rect(0, 100, 220, 10)
+    ladder = Rect(80, 40, 34, 180)
+    physics = WorldPhysics([], one_way_platforms=[one_way], ladders=[ladder])
+    actor = Actor(Rect(86, 76, 20, 20), vy=0)
+
+    # Actor is on ladder and pressing down; should descend through the one-way floor.
+    for _ in range(8):
+        physics.move_actor(actor, 0.05, drop_down=False, climb_dir=1)
+
+    assert actor.rect.top > one_way.top
+    assert actor.on_ground is False
