@@ -1,5 +1,7 @@
 # Saboteur Replica (Python / pygame)
 
+> **Engine note:** The original version is **Python + pygame**, and this repo now also includes a lightweight **Godot 4** port under `godot/`.
+
 A full-featured **Saboteur-style ninja action game** implemented in Python with a massive traversable map. The game supports optional pre-rendered sprite overrides generated through OpenAI Images.
 
 This version now includes:
@@ -10,6 +12,17 @@ This version now includes:
 - Melee + shuriken combat
 - 60 FPS animation pass (character bob/sway + spinning shuriken + terminal flicker)
 - 1-hour mission timer, terminal defuse, and extraction objective
+
+## Run with Godot (new)
+
+A minimal Godot 4 playable port is available in `godot/` with the same core mission loop: collect bomb + codes, defuse at terminal, then extract before time runs out.
+
+```bash
+cd godot
+godot4 --path .
+```
+
+If your executable is named `godot` instead of `godot4`, use that binary.
 
 ## Install & Run
 
