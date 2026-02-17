@@ -10,6 +10,8 @@ FLOOR_H = 44
 def build_level() -> list[Rect]:
     """Massive multi-floor complex with shore approach, interior blocks, and basement."""
     solids: list[Rect] = [
+        # Underwater seabed so the player cannot fall through at spawn.
+        Rect(0, SCREEN_H - 24, 960, 24),
         Rect(220, SCREEN_H - 110, 360, 22),
         Rect(560, SCREEN_H - 170, 380, 24),
         Rect(960, SCREEN_H - FLOOR_H, WORLD_W - 960, FLOOR_H),

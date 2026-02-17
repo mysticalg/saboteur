@@ -25,13 +25,13 @@ from level_data import (
     build_water_zones,
 )
 
-SKY = (10, 14, 28)
-WATER = (20, 70, 126)
-WATER_FOAM = (184, 224, 246)
-NEAR_BG = (24, 34, 58)
-MID_BG = (36, 52, 82)
-PLATFORM_TOP = (115, 123, 150)
-PLATFORM_SIDE = (72, 79, 104)
+SKY = (8, 10, 22)
+WATER = (16, 62, 112)
+WATER_FOAM = (170, 214, 238)
+NEAR_BG = (20, 26, 42)
+MID_BG = (28, 40, 64)
+PLATFORM_TOP = (132, 138, 156)
+PLATFORM_SIDE = (66, 72, 92)
 WHITE = (240, 240, 240)
 YELLOW = (245, 220, 92)
 RED = (214, 84, 102)
@@ -568,10 +568,23 @@ class SaboteurReplica:
             for i in range(0, int(zone.w), 38):
                 wave = int(4 * math.sin(self.time_alive * 4 + i * 0.1))
                 pygame.draw.line(self.screen, WATER_FOAM, (sx + i, zone.y + 10 + wave), (sx + i + 20, zone.y + 10 + wave), 2)
+            pygame.draw.rect(self.screen, (54, 46, 34), pygame.Rect(sx, SCREEN_H - 24, zone.w, 24))
 
         for x in range(0, SCREEN_W, 120):
             h = 120 + int(30 * math.sin((x + self.camera_x * 0.2) * 0.02))
             pygame.draw.rect(self.screen, MID_BG, pygame.Rect(x, SCREEN_H - FLOOR_H - h, 90, h))
+            pygame.draw.rect(self.screen, NEAR_BG, pygame.Rect(x + 14, SCREEN_H - FLOOR_H - h + 18, 10, 10), border_radius=1)
+            pygame.draw.rect(self.screen, NEAR_BG, pygame.Rect(x + 38, SCREEN_H - FLOOR_H - h + 34, 10, 10), border_radius=1)
+
+        # Retro skyline silhouettes to mimic the original's strong city profile.
+        for x in range(-120, SCREEN_W + 120, 80):
+            offset = (self.camera_x * 0.12) % 80
+            sx = x - offset
+            b_h = 160 + int(46 * math.sin((x + self.camera_x) * 0.016))
+            pygame.draw.rect(self.screen, (14, 18, 30), pygame.Rect(sx, SCREEN_H - FLOOR_H - b_h, 64, b_h))
+            if b_h > 170:
+                pygame.draw.rect(self.screen, (196, 178, 96), pygame.Rect(sx + 14, SCREEN_H - FLOOR_H - b_h + 24, 6, 6))
+                pygame.draw.rect(self.screen, (196, 178, 96), pygame.Rect(sx + 34, SCREEN_H - FLOOR_H - b_h + 50, 6, 6))
 
         for bush in self.bushes:
             sx = bush.x - self.camera_x
@@ -704,6 +717,12 @@ class SaboteurReplica:
         if self.won:
             t = self.big.render("MISSION COMPLETE - R TO REPLAY", True, GREEN)
             self.screen.blit(t, (SCREEN_W // 2 - t.get_width() // 2, SCREEN_H // 2 - 24))
+
+        # CRT-like scanlines for a classic retro look.
+        scan = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        for y in range(0, SCREEN_H, 4):
+            pygame.draw.line(scan, (8, 8, 12, 28), (0, y), (SCREEN_W, y), 1)
+        self.screen.blit(scan, (0, 0))
 
         pygame.display.flip()
 
