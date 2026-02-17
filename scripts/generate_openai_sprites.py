@@ -1,16 +1,29 @@
 """Generate pre-rendered sprite PNG assets with OpenAI Images API.
 
-Usage:
+Usage examples:
+  # macOS / Linux
   OPENAI_API_KEY=... python scripts/generate_openai_sprites.py
+
+  # Windows PowerShell
+  $env:OPENAI_API_KEY="..."; python scripts/generate_openai_sprites.py
+
+  # Windows CMD
+  set OPENAI_API_KEY=... && python scripts/generate_openai_sprites.py
+
+  # Cross-platform explicit arg
+  python scripts/generate_openai_sprites.py --api-key sk-...
 """
 
 from __future__ import annotations
 
+import argparse
 import base64
+import getpass
 import json
 import os
 import urllib.request
 from pathlib import Path
+from urllib.error import HTTPError
 
 OUT_DIR = Path("assets/generated")
 MODEL = "gpt-image-1"
@@ -78,18 +91,48 @@ def generate_image(api_key: str, prompt: str, size: str) -> bytes:
     return base64.b64decode(b64)
 
 
+def _resolve_api_key(cli_api_key: str | None, prompt_if_missing: bool) -> str:
+    api_key = (cli_api_key or "").strip() or os.environ.get("OPENAI_API_KEY", "").strip()
+    if api_key:
+        return api_key
+    if prompt_if_missing:
+        try:
+            return getpass.getpass("Enter OpenAI API key (input hidden): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return ""
+    return ""
+
+
 def main() -> int:
-    api_key = os.environ.get("OPENAI_API_KEY")
+    parser = argparse.ArgumentParser(description="Generate OpenAI sprites for Saboteur.")
+    parser.add_argument("--api-key", default="", help="OpenAI API key (alternative to OPENAI_API_KEY env var).")
+    parser.add_argument("--prompt-if-missing", action="store_true", help="Prompt securely for API key if missing.")
+    args = parser.parse_args()
+
+    api_key = _resolve_api_key(args.api_key, args.prompt_if_missing)
     if not api_key:
-        print("ERROR: OPENAI_API_KEY is not set.")
+        print("ERROR: No API key found.")
+        print("Set OPENAI_API_KEY, pass --api-key, or use --prompt-if-missing.")
+        print('Windows PowerShell example: $env:OPENAI_API_KEY="..."; python scripts/generate_openai_sprites.py')
         return 1
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     for filename, spec in SPRITES.items():
         print(f"Generating {filename}...")
-        png_bytes = generate_image(api_key=api_key, prompt=spec["prompt"], size=spec["size"])
-        (OUT_DIR / filename).write_bytes(png_bytes)
+        try:
+            png_bytes = generate_image(api_key=api_key, prompt=spec["prompt"], size=spec["size"])
+            (OUT_DIR / filename).write_bytes(png_bytes)
+        except HTTPError as exc:
+            body = ""
+            try:
+                body = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            print(f"ERROR generating {filename}: HTTP {exc.code} {exc.reason}")
+            if body:
+                print(body[:1200])
+            return 2
 
     print(f"Done. Wrote {len(SPRITES)} sprite files to {OUT_DIR}/")
     return 0

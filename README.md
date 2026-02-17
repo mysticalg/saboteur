@@ -1,5 +1,7 @@
 # Saboteur Replica (Python / pygame)
 
+> **Engine note:** The original version is **Python + pygame**, and this repo now also includes a lightweight **Godot 4** port under `godot/`.
+
 A full-featured **Saboteur-style ninja action game** implemented in Python with a massive traversable map. The game supports optional pre-rendered sprite overrides generated through OpenAI Images.
 
 This version now includes:
@@ -10,6 +12,17 @@ This version now includes:
 - Melee + shuriken combat
 - 60 FPS animation pass (character bob/sway + spinning shuriken + terminal flicker)
 - 1-hour mission timer, terminal defuse, and extraction objective
+
+## Run with Godot (new)
+
+A minimal Godot 4 playable port is available in `godot/` with the same core mission loop: collect bomb + codes, defuse at terminal, then extract before time runs out.
+
+```bash
+cd godot
+godot4 --path .
+```
+
+If your executable is named `godot` instead of `godot4`, use that binary.
 
 ## Install & Run
 
@@ -26,6 +39,7 @@ python game.py
 - Start mission: `Enter` (or `Space`) from splash
 - Open options: `O` from splash
 - In options: `B` opens browser to OpenAI sign-in/key page, `K` edits/saves API key, `G` generates sprites
+- While editing API key (`K`): `Ctrl+V` paste, `Tab` show/hide key text, `Enter` save, `Esc` cancel
 - Toggle OpenAI sprite mode in options: `Left/Right`, `Enter`, or `Space`
 - Back from options: `Esc`, `Backspace`, or `O`
 
@@ -84,7 +98,17 @@ When present, the game automatically loads these files instead of the procedural
 Generate them with:
 
 ```bash
+# macOS / Linux
 OPENAI_API_KEY=your_key_here python scripts/generate_openai_sprites.py
+
+# Windows PowerShell
+$env:OPENAI_API_KEY="your_key_here"; python scripts/generate_openai_sprites.py
+
+# Windows CMD
+set OPENAI_API_KEY=your_key_here && python scripts/generate_openai_sprites.py
+
+# Cross-platform alternative
+python scripts/generate_openai_sprites.py --api-key your_key_here
 ```
 
 Then run the game normally:
