@@ -121,6 +121,22 @@ def build_level() -> list[Rect]:
             Rect(11280, 68, 1420, 14),
             Rect(11940, -20, 1160, 14),
             Rect(12620, -108, 880, 14),
+            # Missile silo chamber + launch well in deep caverns.
+            Rect(5200, 2480, 3200, 24),
+            Rect(5480, 2220, 260, 280),
+            Rect(5520, 1940, 180, 280),
+            Rect(5790, 2220, 260, 280),
+            Rect(6060, 2220, 260, 280),
+            Rect(6330, 2220, 260, 280),
+            Rect(6600, 2220, 260, 280),
+            Rect(6870, 2220, 260, 280),
+            Rect(7140, 2220, 260, 280),
+            Rect(7410, 2220, 260, 280),
+            Rect(7680, 2220, 260, 280),
+            Rect(7950, 2220, 260, 280),
+            # Helipad deck and top-tower crown.
+            Rect(15020, -220, 1200, 28),
+            Rect(15480, -360, 280, 140),
             # Lower cavern maze (multiple underground screens).
             Rect(1740, 1640, 2800, 26),
             Rect(4700, 1640, 1900, 26),

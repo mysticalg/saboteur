@@ -5,13 +5,13 @@
 A full-featured **Saboteur-style ninja action game** implemented in Python with a massive traversable map. The game supports optional pre-rendered sprite overrides generated through OpenAI Images.
 
 This version now includes:
-- Massive multi-layer complex (shore entry, basement lines, ladders, one-way floors, lower cavern maze)
+- Massive multi-layer complex (shore entry, basement lines, elevators, ladders, one-way floors, lower cavern maze)
 - Stealth traversal options (bush hiding, swim approach, moving train corridor)
 - Classic mission items (bomb + codes + extra collectibles)
 - Expanded enemy roster: bats, rats, snakes, guards, ninjas, henchmen, assassins, thugs, robots
 - Melee + shuriken combat
 - 60 FPS animation pass (character bob/sway + spinning shuriken + terminal flicker)
-- 1-hour mission timer, terminal defuse, and extraction objective
+- 1-hour mission timer, terminal defuse, missile-silo sabotage, and helicopter extraction objective
 
 ## Run with Godot (new)
 
@@ -48,6 +48,7 @@ python game.py
 - Jump: `Space`
 - Drop through one-way floors: hold `Down` + tap `Space`
 - Climb ladders up/down: `W/S` or `Up/Down`
+- Elevators: ride moving lift cars in tower shafts
 - Throw shuriken: `Z`
 - Punch: `X`
 - Kick: `C`
@@ -62,7 +63,8 @@ python game.py
 2. Collect the `keycard` (codes).
 3. Collect all remaining mission items.
 4. Defuse at the terminal.
-5. Reach the extraction pad.
+5. Sabotage the nuclear missile silo at the silo console.
+6. Escape from the top helipad helicopter.
 
 You fail if health reaches 0 or the timer expires.
 

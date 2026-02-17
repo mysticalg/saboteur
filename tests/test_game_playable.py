@@ -74,3 +74,9 @@ def test_main_floor_has_access_shafts_to_caverns():
     floor_y = SCREEN_H - 44 + WORLD_Y_OFFSET
     floor_segments = sorted((s.x, s.x + s.w) for s in solids if s.y == floor_y and s.h == 44)
     assert len(floor_segments) >= 4
+
+
+def test_has_helipad_top_and_silo_chamber():
+    solids = build_level()
+    assert any(s.y <= -220 and s.w >= 900 for s in solids)
+    assert any(5200 <= s.x <= 5600 and s.y >= 2400 and s.w >= 3000 for s in solids)

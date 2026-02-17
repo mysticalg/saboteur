@@ -132,6 +132,14 @@ class Particle:
     size: int
 
 
+@dataclass
+class ElevatorCar:
+    rect: Rect
+    y_min: float
+    y_max: float
+    speed: float
+
+
 class SpriteBank:
     GENERATED_FILES = [
         "player.png",
@@ -282,9 +290,14 @@ class SaboteurReplica:
             Pickup("train_token", Rect(6190, 638 + WORLD_Y_OFFSET, 22, 22), CYAN),
             Pickup("engineering_codes", Rect(10320, 210 + WORLD_Y_OFFSET, 22, 22), YELLOW),
             Pickup("vault_relay", Rect(14120, -84 + WORLD_Y_OFFSET, 22, 22), ORANGE),
+            Pickup("silo_overrides", Rect(6200, 2460, 22, 22), RED),
         ]
         self.terminal = Rect(14820, -128 + WORLD_Y_OFFSET, 34, 48)
         self.exit_pad = Rect(15480, -96 + WORLD_Y_OFFSET, 170, 26)
+        self.silo_console = Rect(6240, 2422, 46, 56)
+        self.silo_sabotaged = False
+        self.helicopter_pad = Rect(15120, -236, 980, 16)
+        self.helicopter = Rect(15740, -296, 220, 76)
         self.areas = [
             AreaLabel("SHORE ENTRY", Rect(120, 594 + WORLD_Y_OFFSET, 320, 58), (76, 130, 180)),
             AreaLabel("MAINTENANCE STAIRS", Rect(2860, 586 + WORLD_Y_OFFSET, 420, 58), (110, 130, 155)),
@@ -296,6 +309,8 @@ class SaboteurReplica:
             AreaLabel("HEADQUARTERS", Rect(13180, 94 + WORLD_Y_OFFSET, 820, 62), (150, 116, 78)),
             AreaLabel("TOWER CORE", Rect(9400, 220, 980, 52), (108, 102, 120)),
             AreaLabel("SKY TERRACES", Rect(12280, 42, 920, 48), (96, 136, 142)),
+            AreaLabel("NUCLEAR SILO", Rect(5560, 2440, 760, 52), (152, 96, 72)),
+            AreaLabel("HELIPAD", Rect(15180, -248, 520, 50), (124, 140, 166)),
         ]
 
 
@@ -340,6 +355,12 @@ class SaboteurReplica:
         track_y, self.train_min_x, self.train_max_x = build_train_track()
         self.train_rect = Rect(self.train_min_x, track_y - 58, 180, 64)
         self.train_speed = 150.0
+        self.elevators = [
+            ElevatorCar(Rect(7480, 610 + WORLD_Y_OFFSET, 52, 22), 150 + WORLD_Y_OFFSET, 650 + WORLD_Y_OFFSET, -96.0),
+            ElevatorCar(Rect(9800, 610 + WORLD_Y_OFFSET, 52, 22), 130 + WORLD_Y_OFFSET, 650 + WORLD_Y_OFFSET, -102.0),
+            ElevatorCar(Rect(12060, 610 + WORLD_Y_OFFSET, 52, 22), 30 + WORLD_Y_OFFSET, 650 + WORLD_Y_OFFSET, -108.0),
+            ElevatorCar(Rect(15340, -218, 52, 22), -320, 620 + WORLD_Y_OFFSET, -116.0),
+        ]
 
     def run(self) -> None:
         while True:
@@ -429,8 +450,11 @@ class SaboteurReplica:
                 self._start_melee("kick")
             if event.key == pygame.K_v:
                 self._start_melee("flying_kick")
-            if event.key == pygame.K_e and self.player.actor.rect.intersects(self.terminal):
-                self.rules.defuse_bomb()
+            if event.key == pygame.K_e:
+                if self.player.actor.rect.intersects(self.terminal):
+                    self.rules.defuse_bomb()
+                if self.player.actor.rect.intersects(self.silo_console) and self.player.has_bomb and self.player.has_codes:
+                    self.silo_sabotaged = True
             if event.key == pygame.K_ESCAPE:
                 self.state = "splash"
 
@@ -491,6 +515,7 @@ class SaboteurReplica:
         self.player.actor.rect.x = max(0, min(WORLD_W - self.player.actor.rect.w, self.player.actor.rect.x))
         self.player.actor.rect.y = max(0, min(WORLD_H - self.player.actor.rect.h, self.player.actor.rect.y))
         self._update_train(dt)
+        self._update_elevators(dt)
         for e in self.enemies:
             e.update(dt, self.physics)
 
@@ -523,6 +548,29 @@ class SaboteurReplica:
             p.x += self.train_speed * dt
             p.y = self.train_rect.top - p.h
             self.player.actor.on_ground = True
+
+    def _update_elevators(self, dt: float) -> None:
+        p = self.player.actor.rect
+        for elevator in self.elevators:
+            old_y = elevator.rect.y
+            elevator.rect.y += elevator.speed * dt
+            if elevator.rect.y <= elevator.y_min:
+                elevator.rect.y = elevator.y_min
+                elevator.speed = abs(elevator.speed)
+            elif elevator.rect.y >= elevator.y_max:
+                elevator.rect.y = elevator.y_max
+                elevator.speed = -abs(elevator.speed)
+
+            standing = (
+                p.bottom <= old_y + 10
+                and p.bottom >= old_y - 8
+                and p.right > elevator.rect.left + 2
+                and p.left < elevator.rect.right - 2
+            )
+            if standing:
+                p.y += elevator.rect.y - old_y
+                p.y = elevator.rect.top - p.h
+                self.player.actor.on_ground = True
 
     def _update_attack(self, dt: float) -> None:
         if not self.attack:
@@ -658,7 +706,8 @@ class SaboteurReplica:
             return
         if self._all_mission_items_collected() and self.player.actor.rect.intersects(self.terminal):
             self.rules.defuse_bomb()
-        if self.rules.can_escape(self.player) and self._all_mission_items_collected() and self.player.actor.rect.intersects(self.exit_pad):
+        helicopter_ready = self.player.actor.rect.intersects(self.helicopter) or self.player.actor.rect.intersects(self.helicopter_pad)
+        if self.rules.can_escape(self.player) and self._all_mission_items_collected() and self.silo_sabotaged and helicopter_ready:
             self.won = True
 
     def _update_particles(self, dt: float) -> None:
@@ -760,6 +809,10 @@ class SaboteurReplica:
             for y in range(116, 650, 64):
                 pygame.draw.rect(self.screen, (104, 118, 146), pygame.Rect(sx + 6, y - self.camera_y + WORLD_Y_OFFSET, 40, 20), border_radius=2)
 
+        for elevator in self.elevators:
+            pygame.draw.rect(self.screen, (168, 184, 212), pygame.Rect(elevator.rect.x - self.camera_x, elevator.rect.y - self.camera_y, elevator.rect.w, elevator.rect.h), border_radius=3)
+            pygame.draw.rect(self.screen, (52, 58, 74), pygame.Rect(elevator.rect.x - self.camera_x + 3, elevator.rect.y - self.camera_y + 4, elevator.rect.w - 6, elevator.rect.h - 8), border_radius=2)
+
         pygame.draw.rect(self.screen, (84, 96, 128), pygame.Rect(7240 - self.camera_x, 122 - self.camera_y + WORLD_Y_OFFSET, 2220, 8))
         for i in range(7240, 9460, 58):
             pygame.draw.rect(self.screen, (152, 166, 198), pygame.Rect(i - self.camera_x, 126 - self.camera_y + WORLD_Y_OFFSET, 34, 5), border_radius=1)
@@ -784,6 +837,19 @@ class SaboteurReplica:
             for seg in range(int(ladder.h // 68) + 1):
                 y = ladder.y + seg * 68
                 self.screen.blit(self.sprites.ladder, (ladder.x - self.camera_x, y - self.camera_y))
+
+        # Missile silo and helipad landmarks.
+        pygame.draw.rect(self.screen, (96, 86, 82), pygame.Rect(5520 - self.camera_x, 1900 - self.camera_y, 180, 600), border_radius=10)
+        pygame.draw.rect(self.screen, (198, 82, 70), pygame.Rect(5580 - self.camera_x, 1980 - self.camera_y, 60, 430), border_radius=14)
+        pygame.draw.rect(self.screen, (82, 112, 136), pygame.Rect(self.silo_console.x - self.camera_x, self.silo_console.y - self.camera_y, self.silo_console.w, self.silo_console.h), border_radius=4)
+        silo_txt = "SILO SABOTAGED" if self.silo_sabotaged else "SILO CONSOLE"
+        self.screen.blit(self.font.render(silo_txt, True, (230, 230, 230)), (self.silo_console.x - self.camera_x - 30, self.silo_console.y - self.camera_y - 20))
+
+        pygame.draw.rect(self.screen, (112, 126, 144), pygame.Rect(self.helicopter_pad.x - self.camera_x, self.helicopter_pad.y - self.camera_y, self.helicopter_pad.w, self.helicopter_pad.h), border_radius=3)
+        pygame.draw.circle(self.screen, (232, 232, 236), (int(self.helicopter_pad.x - self.camera_x + self.helicopter_pad.w / 2), int(self.helicopter_pad.y - self.camera_y + 8)), 70, width=3)
+        pygame.draw.rect(self.screen, (68, 90, 114), pygame.Rect(self.helicopter.x - self.camera_x, self.helicopter.y - self.camera_y, self.helicopter.w, self.helicopter.h), border_radius=8)
+        pygame.draw.rect(self.screen, (170, 192, 220), pygame.Rect(self.helicopter.x - self.camera_x + 34, self.helicopter.y - self.camera_y + 18, 120, 20), border_radius=6)
+        pygame.draw.rect(self.screen, (28, 34, 48), pygame.Rect(self.helicopter.x - self.camera_x - 50, self.helicopter.y - self.camera_y + 4, self.helicopter.w + 100, 6), border_radius=2)
 
         self.screen.blit(self.sprites.train, (self.train_rect.x - self.camera_x, self.train_rect.y - self.camera_y))
         pygame.draw.rect(self.screen, (60, 62, 70), pygame.Rect(self.train_min_x - self.camera_x, self.train_rect.y + 58 - self.camera_y, self.train_max_x - self.train_min_x, 6))
@@ -956,7 +1022,7 @@ class SaboteurReplica:
         terminal_frame.set_alpha(int(255 * terminal_glow))
         self._draw_sprite(self.terminal, terminal_frame)
         pygame.draw.rect(self.screen, ORANGE, pygame.Rect(self.exit_pad.x - self.camera_x, self.exit_pad.y - self.camera_y, self.exit_pad.w, self.exit_pad.h), border_radius=4)
-        self.screen.blit(self.font.render("EXTRACT", True, (22, 22, 24)), (self.exit_pad.x - self.camera_x + 26, self.exit_pad.y - self.camera_y + 2))
+        self.screen.blit(self.font.render("OLD EXIT", True, (22, 22, 24)), (self.exit_pad.x - self.camera_x + 20, self.exit_pad.y - self.camera_y + 2))
 
         for e in self.enemies:
             if not e.alive:
@@ -1037,7 +1103,9 @@ class SaboteurReplica:
         sprite_mode = "ON" if self.use_openai_sprites else "OFF"
         self.screen.blit(self.font.render(f"OPENAI SPRITES:{sprite_mode}", True, (168, 192, 232)), (14, 112))
         self.screen.blit(self.font.render("ANIMATION:60FPS LOOP", True, (168, 212, 168)), (14, 136))
-        controls = "Move:A/D Jump:Space Drop:Down+Space Climb:W/S Crouch/Hide:Down Sprint:Shift Throw:Z Interact:E ESC:Menu"
+        obj = f"OBJECTIVES SILO:{'DONE' if self.silo_sabotaged else 'PENDING'} HELI:TOP PAD"
+        self.screen.blit(self.font.render(obj, True, (220, 204, 156)), (14, 160))
+        controls = "Move:A/D Jump:Space Drop:Down+Space Climb:W/S Elevators:auto Interact:E ESC:Menu"
         self.screen.blit(self.font.render(controls, True, (200, 210, 230)), (14, 86))
 
         if self.failed:
