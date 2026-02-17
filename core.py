@@ -121,7 +121,8 @@ class WorldPhysics:
                     actor.rect.y = wall.bottom
                 actor.vy = 0
 
-        if not drop_down and actor.vy >= 0:
+        ignore_one_way = actor.on_ladder and climb_dir > 0
+        if not drop_down and not ignore_one_way and actor.vy >= 0:
             for plat in self.one_way_platforms:
                 crossed_top = prev_bottom <= plat.top + 4 and actor.rect.bottom >= plat.top
                 within_x = actor.rect.right > plat.left + 2 and actor.rect.left < plat.right - 2

@@ -1,7 +1,7 @@
 from collections import deque
 
 from core import JUMP_VELOCITY
-from level_data import SCREEN_H, WORLD_H, WORLD_Y_OFFSET, build_level
+from level_data import SCREEN_H, SCREEN_W, WORLD_H, WORLD_Y_OFFSET, build_level
 
 
 def _platform_nodes():
@@ -38,12 +38,12 @@ def test_level_route_to_extraction_is_connected():
                 q.append(j)
 
     farthest = max(nodes[i][0] for i in seen)
-    assert farthest > 3800, "Level does not provide a traversable route to extraction area"
+    assert farthest > 15000, "Level does not provide a traversable route across the skyscraper"
 
 
 def test_game_module_constants_for_vertical_space():
     assert SCREEN_H >= 700
-    assert WORLD_H >= SCREEN_H * 2
+    assert WORLD_H >= SCREEN_H * 4
 
 
 def test_spawn_side_has_floor_under_water():
@@ -55,3 +55,9 @@ def test_spawn_side_has_floor_under_water():
 def test_has_upper_tower_routes_for_vertical_exploration():
     solids = build_level()
     assert any(s.y < WORLD_Y_OFFSET for s in solids)
+
+
+def test_level_width_supports_many_screen_skyscraper():
+    from level_data import WORLD_W
+
+    assert WORLD_W >= SCREEN_W * 10

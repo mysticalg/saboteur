@@ -46,6 +46,8 @@ python game.py
 ### In Mission
 - Move: `A / D` or arrow keys
 - Jump: `Space`
+- Drop through one-way floors: hold `Down` + tap `Space`
+- Climb ladders up/down: `W/S` or `Up/Down`
 - Throw shuriken: `Z`
 - Punch: `X`
 - Kick: `C`

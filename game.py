@@ -280,22 +280,22 @@ class SaboteurReplica:
             Pickup("time_bomb", Rect(1520, 578 + WORLD_Y_OFFSET, 22, 22), RED),
             Pickup("keycard", Rect(3220, 638 + WORLD_Y_OFFSET, 22, 22), BLUE),
             Pickup("train_token", Rect(6190, 638 + WORLD_Y_OFFSET, 22, 22), CYAN),
-            Pickup("engineering_codes", Rect(8060, 338 + WORLD_Y_OFFSET, 22, 22), YELLOW),
-            Pickup("vault_relay", Rect(9460, 248 + WORLD_Y_OFFSET, 22, 22), ORANGE),
+            Pickup("engineering_codes", Rect(10320, 210 + WORLD_Y_OFFSET, 22, 22), YELLOW),
+            Pickup("vault_relay", Rect(14120, -84 + WORLD_Y_OFFSET, 22, 22), ORANGE),
         ]
-        self.terminal = Rect(9120, 290 + WORLD_Y_OFFSET, 34, 48)
-        self.exit_pad = Rect(9630, 306 + WORLD_Y_OFFSET, 140, 26)
+        self.terminal = Rect(14820, -128 + WORLD_Y_OFFSET, 34, 48)
+        self.exit_pad = Rect(15480, -96 + WORLD_Y_OFFSET, 170, 26)
         self.areas = [
             AreaLabel("SHORE ENTRY", Rect(120, 594 + WORLD_Y_OFFSET, 320, 58), (76, 130, 180)),
             AreaLabel("MAINTENANCE STAIRS", Rect(2860, 586 + WORLD_Y_OFFSET, 420, 58), (110, 130, 155)),
             AreaLabel("MONORAIL ACCESS", Rect(5200, 586 + WORLD_Y_OFFSET, 420, 58), (136, 116, 170)),
-            AreaLabel("SKYSCRAPER SECURITY", Rect(7220, 618 + WORLD_Y_OFFSET, 540, 52), (136, 82, 92)),
-            AreaLabel("STORAGE AREA", Rect(7920, 554 + WORLD_Y_OFFSET, 560, 52), (124, 112, 90)),
-            AreaLabel("SERVER ROOMS", Rect(7580, 426 + WORLD_Y_OFFSET, 580, 52), (80, 132, 146)),
-            AreaLabel("GUARD POSTS", Rect(8440, 362 + WORLD_Y_OFFSET, 540, 52), (144, 96, 96)),
-            AreaLabel("HEADQUARTERS", Rect(8200, 170 + WORLD_Y_OFFSET, 600, 62), (150, 116, 78)),
-            AreaLabel("TOWER CORE", Rect(7620, 280, 700, 52), (108, 102, 120)),
-            AreaLabel("SKY TERRACES", Rect(8120, 118, 640, 48), (96, 136, 142)),
+            AreaLabel("SKYSCRAPER SECURITY", Rect(7220, 618 + WORLD_Y_OFFSET, 580, 52), (136, 82, 92)),
+            AreaLabel("STORAGE AREA", Rect(8960, 554 + WORLD_Y_OFFSET, 620, 52), (124, 112, 90)),
+            AreaLabel("SERVER ROOMS", Rect(10420, 426 + WORLD_Y_OFFSET, 640, 52), (80, 132, 146)),
+            AreaLabel("GUARD POSTS", Rect(11600, 330 + WORLD_Y_OFFSET, 640, 52), (144, 96, 96)),
+            AreaLabel("HEADQUARTERS", Rect(13180, 94 + WORLD_Y_OFFSET, 820, 62), (150, 116, 78)),
+            AreaLabel("TOWER CORE", Rect(9400, 220, 980, 52), (108, 102, 120)),
+            AreaLabel("SKY TERRACES", Rect(12280, 42, 920, 48), (96, 136, 142)),
         ]
 
 
@@ -305,11 +305,11 @@ class SaboteurReplica:
             Enemy(Actor(Rect(3120, 624 + WORLD_Y_OFFSET, 30, 56)), "guard", 3040, 4440, 120, hp=3, max_hp=3),
             Enemy(Actor(Rect(4860, 414 + WORLD_Y_OFFSET, 30, 56)), "heavy", 4680, 5440, 92, hp=5, max_hp=5),
             Enemy(Actor(Rect(6520, 624 + WORLD_Y_OFFSET, 42, 44)), "dog", 6460, 8040, 152, hp=2, max_hp=2),
-            Enemy(Actor(Rect(8460, 294 + WORLD_Y_OFFSET, 30, 56)), "ninja", 8340, 9400, 146, hp=4, max_hp=4),
-            Enemy(Actor(Rect(7580, 562 + WORLD_Y_OFFSET, 30, 56)), "guard", 7420, 8200, 118, hp=3, max_hp=3),
-            Enemy(Actor(Rect(8780, 498 + WORLD_Y_OFFSET, 30, 56)), "drone", 8600, 9380, 160, hp=2, max_hp=2),
-            Enemy(Actor(Rect(8420, 178, 30, 56)), "boss", 8260, 9000, 126, hp=10, max_hp=10, boss=True),
-            Enemy(Actor(Rect(9180, 114, 30, 56)), "boss", 8960, 9520, 134, hp=12, max_hp=12, boss=True),
+            Enemy(Actor(Rect(9460, 294 + WORLD_Y_OFFSET, 30, 56)), "ninja", 9220, 10400, 146, hp=4, max_hp=4),
+            Enemy(Actor(Rect(10820, 562 + WORLD_Y_OFFSET, 30, 56)), "guard", 10440, 11380, 118, hp=3, max_hp=3),
+            Enemy(Actor(Rect(12020, 498 + WORLD_Y_OFFSET, 30, 56)), "drone", 11600, 12640, 160, hp=2, max_hp=2),
+            Enemy(Actor(Rect(13640, 96, 30, 56)), "boss", 13280, 14440, 126, hp=10, max_hp=10, boss=True),
+            Enemy(Actor(Rect(14980, 32, 30, 56)), "boss", 14620, 15620, 134, hp=12, max_hp=12, boss=True),
         ]
 
         self.projectiles: list[Projectile] = []
