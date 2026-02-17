@@ -40,6 +40,7 @@ BLUE = (90, 140, 235)
 CYAN = (98, 225, 225)
 ORANGE = (245, 160, 90)
 PURPLE = (126, 96, 225)
+GOLD = (236, 198, 72)
 
 
 @dataclass
@@ -52,6 +53,12 @@ class Enemy:
     hp: int = 2
     alive: bool = True
     attack_cd: float = 0.0
+    max_hp: int = 2
+    boss: bool = False
+
+    def __post_init__(self) -> None:
+        if self.max_hp <= 0:
+            self.max_hp = self.hp
 
     def update(self, dt: float, physics: WorldPhysics) -> None:
         if not self.alive:
@@ -95,6 +102,13 @@ class AreaLabel:
     name: str
     rect: Rect
     color: tuple[int, int, int]
+
+
+@dataclass
+class Drop:
+    kind: str
+    rect: Rect
+    ttl: float = 16.0
 
 
 @dataclass
@@ -213,6 +227,10 @@ class SaboteurReplica:
         self.attack_cd = 0.0
         self.attack: AttackWindow | None = None
         self.hidden = False
+        self.gold = 0
+        self.invisibility_timer = 0.0
+        self.invincibility_timer = 0.0
+        self.speed_timer = 0.0
 
         self.bomb = Bomb(seconds_left=3600)
         self.rules = GameRules(self.bomb)
@@ -239,18 +257,20 @@ class SaboteurReplica:
 
 
         self.enemies: list[Enemy] = [
-            Enemy(Actor(Rect(1320, 554, 30, 56)), "guard", 1200, 1760, 94, hp=2),
-            Enemy(Actor(Rect(2040, 514, 30, 56)), "ninja", 1900, 2480, 116, hp=3),
-            Enemy(Actor(Rect(3120, 624, 30, 56)), "guard", 3040, 4440, 120, hp=3),
-            Enemy(Actor(Rect(4860, 414, 30, 56)), "ninja", 4680, 5440, 128, hp=3),
-            Enemy(Actor(Rect(6520, 624, 42, 44)), "dog", 6460, 8040, 152, hp=2),
-            Enemy(Actor(Rect(8460, 294, 30, 56)), "ninja", 8340, 9400, 146, hp=4),
-            Enemy(Actor(Rect(7580, 562, 30, 56)), "guard", 7420, 8200, 118, hp=3),
-            Enemy(Actor(Rect(8780, 498, 30, 56)), "guard", 8600, 9380, 130, hp=3),
-            Enemy(Actor(Rect(8420, 178, 30, 56)), "ninja", 8260, 9000, 152, hp=4),
+            Enemy(Actor(Rect(1320, 554, 30, 56)), "guard", 1200, 1760, 94, hp=2, max_hp=2),
+            Enemy(Actor(Rect(2040, 514, 30, 56)), "ninja", 1900, 2480, 116, hp=3, max_hp=3),
+            Enemy(Actor(Rect(3120, 624, 30, 56)), "guard", 3040, 4440, 120, hp=3, max_hp=3),
+            Enemy(Actor(Rect(4860, 414, 30, 56)), "heavy", 4680, 5440, 92, hp=5, max_hp=5),
+            Enemy(Actor(Rect(6520, 624, 42, 44)), "dog", 6460, 8040, 152, hp=2, max_hp=2),
+            Enemy(Actor(Rect(8460, 294, 30, 56)), "ninja", 8340, 9400, 146, hp=4, max_hp=4),
+            Enemy(Actor(Rect(7580, 562, 30, 56)), "guard", 7420, 8200, 118, hp=3, max_hp=3),
+            Enemy(Actor(Rect(8780, 498, 30, 56)), "drone", 8600, 9380, 160, hp=2, max_hp=2),
+            Enemy(Actor(Rect(8420, 178, 30, 56)), "boss", 8260, 9000, 126, hp=10, max_hp=10, boss=True),
+            Enemy(Actor(Rect(9180, 114, 30, 56)), "boss", 8960, 9520, 134, hp=12, max_hp=12, boss=True),
         ]
 
         self.projectiles: list[Projectile] = []
+        self.drops: list[Drop] = []
         self.particles: list[Particle] = []
         self.camera_x = 0.0
         self.failed = False
@@ -315,9 +335,13 @@ class SaboteurReplica:
     def _update(self, dt: float) -> None:
         self.time_alive += dt
         self.attack_cd = max(0.0, self.attack_cd - dt)
+        self.invisibility_timer = max(0.0, self.invisibility_timer - dt)
+        self.invincibility_timer = max(0.0, self.invincibility_timer - dt)
+        self.speed_timer = max(0.0, self.speed_timer - dt)
         keys = pygame.key.get_pressed()
 
-        move_speed = RUN_SPEED * (0.58 if self.player.actor.in_water else 1.0)
+        speed_boost = 1.45 if self.speed_timer > 0 else 1.0
+        move_speed = RUN_SPEED * speed_boost * (0.58 if self.player.actor.in_water else 1.0)
         if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
             move_speed *= 0.55
         self.player.actor.vx = 0
@@ -345,7 +369,9 @@ class SaboteurReplica:
         self._update_attack(dt)
         self._update_projectiles(dt)
         self._enemy_logic()
+        self._update_drops(dt)
         self._collect_items()
+        self._collect_drops()
         self._update_particles(dt)
         self.bomb.tick(dt)
         self._check_end_state()
@@ -385,6 +411,7 @@ class SaboteurReplica:
                 if e.hp <= 0:
                     e.alive = False
                     self._emit_particles(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 24, ORANGE, 14)
+                    self._spawn_enemy_drop(e)
 
     def _update_projectiles(self, dt: float) -> None:
         alive: list[Projectile] = []
@@ -397,8 +424,9 @@ class SaboteurReplica:
                 if any(self._hit_enemy(e, p) for e in self.enemies):
                     continue
             elif p.rect.intersects(self.player.actor.rect):
-                self.player.health = max(0, self.player.health - 1)
-                self._emit_particles(p.rect.x, p.rect.y, RED, 8)
+                if self.invincibility_timer <= 0:
+                    self.player.health = max(0, self.player.health - 1)
+                    self._emit_particles(p.rect.x, p.rect.y, RED, 8)
                 continue
             alive.append(p)
         self.projectiles = alive
@@ -410,6 +438,7 @@ class SaboteurReplica:
             if e.hp <= 0:
                 e.alive = False
                 self._emit_particles(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 24, ORANGE, 12)
+                self._spawn_enemy_drop(e)
             return True
         return False
 
@@ -419,16 +448,19 @@ class SaboteurReplica:
             if not e.alive:
                 continue
             if p.intersects(e.actor.rect):
-                self.player.health = max(0, self.player.health - 1)
-                self._emit_particles(p.x + p.w / 2, p.y + 32, RED, 7)
-                self.player.actor.rect.x = max(40, self.player.actor.rect.x - 70)
+                if self.invincibility_timer <= 0:
+                    self.player.health = max(0, self.player.health - 1)
+                    self._emit_particles(p.x + p.w / 2, p.y + 32, RED, 7)
+                    self.player.actor.rect.x = max(40, self.player.actor.rect.x - 70)
             dist = abs((e.actor.rect.x + e.actor.rect.w / 2) - (p.x + p.w / 2))
             same_level = abs(e.actor.rect.y - p.y) < 56
-            sees_player = not self.hidden and dist < (320 if e.kind == "ninja" else 250)
-            if sees_player and same_level and e.attack_cd <= 0 and e.kind in {"ninja", "guard"}:
+            sight = 360 if e.kind in {"boss", "drone"} else (320 if e.kind == "ninja" else 250)
+            sees_player = self.invisibility_timer <= 0 and not self.hidden and dist < sight
+            if sees_player and same_level and e.attack_cd <= 0 and e.kind in {"ninja", "guard", "drone", "boss"}:
                 sign = -1 if p.x < e.actor.rect.x else 1
-                self.projectiles.append(Projectile(Rect(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 18, 12, 12), 540 * sign, 1.1, "enemy"))
-                e.attack_cd = 1.5
+                proj_speed = 620 if e.kind == "boss" else (580 if e.kind == "drone" else 540)
+                self.projectiles.append(Projectile(Rect(e.actor.rect.x + e.actor.rect.w / 2, e.actor.rect.y + 18, 12, 12), proj_speed * sign, 1.1, "enemy"))
+                e.attack_cd = 0.9 if e.kind == "boss" else 1.5
 
     def _collect_items(self) -> None:
         p = self.player.actor.rect
@@ -440,6 +472,52 @@ class SaboteurReplica:
                     self.rules.player_collects_bomb(self.player)
                 elif item.name in {"keycard", "engineering_codes"}:
                     self.rules.player_collects_codes(self.player)
+
+    def _update_drops(self, dt: float) -> None:
+        alive: list[Drop] = []
+        for drop in self.drops:
+            drop.ttl -= dt
+            if drop.ttl > 0:
+                alive.append(drop)
+        self.drops = alive
+
+    def _spawn_enemy_drop(self, enemy: Enemy) -> None:
+        cx = enemy.actor.rect.x + enemy.actor.rect.w / 2 - 12
+        cy = enemy.actor.rect.y + enemy.actor.rect.h / 2 - 12
+
+        if enemy.boss:
+            self.drops.append(Drop("gold", Rect(cx - 12, cy, 24, 24), ttl=24.0))
+            self.drops.append(Drop("invisibility", Rect(cx + 16, cy, 24, 24), ttl=24.0))
+            self.drops.append(Drop("invincibility", Rect(cx + 44, cy, 24, 24), ttl=24.0))
+            return
+
+        if random.random() < 0.12:
+            self.drops.append(Drop("gold", Rect(cx, cy, 24, 24)))
+
+        if random.random() < 0.08:
+            kind = random.choice(["invisibility", "invincibility", "speed"])
+            self.drops.append(Drop(kind, Rect(cx + 18, cy, 24, 24)))
+
+    def _collect_drops(self) -> None:
+        p = self.player.actor.rect
+        remaining: list[Drop] = []
+        for drop in self.drops:
+            if not p.intersects(drop.rect):
+                remaining.append(drop)
+                continue
+            if drop.kind == "gold":
+                self.gold += 15
+                self._emit_particles(drop.rect.x + 12, drop.rect.y + 12, GOLD, 10)
+            elif drop.kind == "invisibility":
+                self.invisibility_timer = max(self.invisibility_timer, 10.0)
+                self._emit_particles(drop.rect.x + 12, drop.rect.y + 12, CYAN, 12)
+            elif drop.kind == "invincibility":
+                self.invincibility_timer = max(self.invincibility_timer, 8.0)
+                self._emit_particles(drop.rect.x + 12, drop.rect.y + 12, YELLOW, 12)
+            elif drop.kind == "speed":
+                self.speed_timer = max(self.speed_timer, 9.0)
+                self._emit_particles(drop.rect.x + 12, drop.rect.y + 12, GREEN, 12)
+        self.drops = remaining
 
     def _all_mission_items_collected(self) -> bool:
         return all(i.taken for i in self.pickups)
@@ -565,15 +643,33 @@ class SaboteurReplica:
         for e in self.enemies:
             if not e.alive:
                 continue
-            if e.kind == "guard":
+            if e.kind in {"guard", "heavy"}:
                 self._draw_sprite(e.actor.rect, self.sprites.guard, e.speed < 0)
-            elif e.kind == "ninja":
+                if e.kind == "heavy":
+                    pygame.draw.rect(self.screen, (90, 90, 105), pygame.Rect(e.actor.rect.x - self.camera_x - 2, e.actor.rect.y - 2, e.actor.rect.w + 4, e.actor.rect.h + 4), width=2, border_radius=3)
+            elif e.kind in {"ninja", "boss", "drone"}:
                 self._draw_sprite(e.actor.rect, self.sprites.ninja, e.speed < 0)
+                if e.kind == "boss":
+                    pygame.draw.rect(self.screen, ORANGE, pygame.Rect(e.actor.rect.x - self.camera_x - 4, e.actor.rect.y - 4, e.actor.rect.w + 8, e.actor.rect.h + 8), width=2, border_radius=4)
+                if e.kind == "drone":
+                    pygame.draw.circle(self.screen, CYAN, (int(e.actor.rect.x - self.camera_x + e.actor.rect.w / 2), int(e.actor.rect.y - 8)), 7, width=2)
             else:
                 self._draw_sprite(e.actor.rect, self.sprites.dog, e.speed < 0)
 
         for p in self.projectiles:
             self._draw_sprite(p.rect, self.sprites.shuriken)
+
+        for drop in self.drops:
+            sx = int(drop.rect.x - self.camera_x + drop.rect.w / 2)
+            sy = int(drop.rect.y + drop.rect.h / 2)
+            if drop.kind == "gold":
+                pygame.draw.circle(self.screen, GOLD, (sx, sy), 10)
+            elif drop.kind == "invisibility":
+                pygame.draw.circle(self.screen, CYAN, (sx, sy), 10, width=3)
+            elif drop.kind == "invincibility":
+                pygame.draw.circle(self.screen, YELLOW, (sx, sy), 10, width=3)
+            else:
+                pygame.draw.polygon(self.screen, GREEN, [(sx, sy - 10), (sx + 10, sy), (sx, sy + 10), (sx - 10, sy)])
 
         for p in self.particles:
             pygame.draw.circle(self.screen, p.color, (int(p.x - self.camera_x), int(p.y)), p.size)
@@ -581,19 +677,26 @@ class SaboteurReplica:
         if self.attack:
             pygame.draw.rect(self.screen, (180, 255, 180), pygame.Rect(self.attack.rect.x - self.camera_x, self.attack.rect.y, self.attack.rect.w, self.attack.rect.h), width=2, border_radius=4)
 
-        self._draw_sprite(self.player.actor.rect, self.sprites.player, self.facing < 0)
+        if self.invisibility_timer > 0:
+            ghost = self.sprites.player.copy()
+            ghost.set_alpha(120)
+            self._draw_sprite(self.player.actor.rect, ghost, self.facing < 0)
+        else:
+            self._draw_sprite(self.player.actor.rect, self.sprites.player, self.facing < 0)
         if self.hidden:
             self.screen.blit(self.font.render("HIDDEN", True, GREEN), (self.player.actor.rect.x - self.camera_x - 4, self.player.actor.rect.y - 22))
 
         hud = (
             f"ZONE:{min(12, int((self.player.actor.rect.x / WORLD_W) * 12) + 1)}/12 HP:{self.player.health} SHURIKEN:{self.player.shots} "
             f"BOMB:{'YES' if self.player.has_bomb else 'NO'} CODES:{'YES' if self.player.has_codes else 'NO'} "
-            f"ITEMS:{sum(1 for p in self.pickups if p.taken)}/{len(self.pickups)} "
+            f"ITEMS:{sum(1 for p in self.pickups if p.taken)}/{len(self.pickups)} GOLD:{self.gold} "
             f"TIMER:{'DEFUSED' if self.bomb.defused else f'{self.bomb.seconds_left:06.1f}s'}"
         )
         self.screen.blit(self.font.render(hud, True, WHITE), (14, 12))
+        buffs = f"BUFFS INVIS:{self.invisibility_timer:04.1f}s INVINC:{self.invincibility_timer:04.1f}s SPEED:{self.speed_timer:04.1f}s"
+        self.screen.blit(self.font.render(buffs, True, (176, 224, 214)), (14, 62))
         controls = "Move:A/D Jump:Space Drop:Down+Space Climb:W/S Crouch/Hide:Down Sprint:Shift Throw:Z Interact:E"
-        self.screen.blit(self.font.render(controls, True, (200, 210, 230)), (14, 38))
+        self.screen.blit(self.font.render(controls, True, (200, 210, 230)), (14, 86))
 
         if self.failed:
             t = self.big.render("MISSION FAILED - R TO RETRY", True, RED)
