@@ -49,6 +49,8 @@ class Actor:
     vx: float = 0.0
     vy: float = 0.0
     on_ground: bool = False
+    on_ladder: bool = False
+    in_water: bool = False
 
 
 @dataclass
@@ -74,11 +76,30 @@ class PlayerState:
 class WorldPhysics:
     """Collision and movement helpers usable in tests and runtime."""
 
-    def __init__(self, solids: list[Rect]):
+    def __init__(
+        self,
+        solids: list[Rect],
+        one_way_platforms: list[Rect] | None = None,
+        ladders: list[Rect] | None = None,
+        water_zones: list[Rect] | None = None,
+    ):
         self.solids = solids
+        self.one_way_platforms = one_way_platforms or []
+        self.ladders = ladders or []
+        self.water_zones = water_zones or []
 
-    def move_actor(self, actor: Actor, dt: float) -> None:
-        actor.vy += GRAVITY * dt
+    def move_actor(self, actor: Actor, dt: float, *, drop_down: bool = False, climb_dir: int = 0) -> None:
+        actor.in_water = any(actor.rect.intersects(zone) for zone in self.water_zones)
+        actor.on_ladder = any(actor.rect.intersects(lad) for lad in self.ladders)
+
+        gravity = GRAVITY * (0.32 if actor.in_water else 1.0)
+        if actor.on_ladder and climb_dir != 0:
+            actor.vy = climb_dir * 170
+        elif actor.on_ladder and abs(actor.vy) < 40:
+            actor.vy = 0
+        else:
+            actor.vy += gravity * dt
+
         actor.rect.x += actor.vx * dt
         for wall in self.solids:
             if actor.rect.intersects(wall):
@@ -88,6 +109,7 @@ class WorldPhysics:
                     actor.rect.x = wall.right
                 actor.vx = 0
 
+        prev_bottom = actor.rect.bottom
         actor.rect.y += actor.vy * dt
         actor.on_ground = False
         for wall in self.solids:
@@ -98,6 +120,15 @@ class WorldPhysics:
                 elif actor.vy < 0:
                     actor.rect.y = wall.bottom
                 actor.vy = 0
+
+        if not drop_down and actor.vy >= 0:
+            for plat in self.one_way_platforms:
+                crossed_top = prev_bottom <= plat.top + 4 and actor.rect.bottom >= plat.top
+                within_x = actor.rect.right > plat.left + 2 and actor.rect.left < plat.right - 2
+                if crossed_top and within_x and actor.rect.top < plat.top:
+                    actor.rect.y = plat.top - actor.rect.h
+                    actor.vy = 0
+                    actor.on_ground = True
 
 
 class GameRules:
