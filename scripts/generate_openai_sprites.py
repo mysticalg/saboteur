@@ -18,39 +18,39 @@ MODEL = "gpt-image-1"
 SPRITES: dict[str, dict[str, str]] = {
     "player.png": {
         "size": "1024x1024",
-        "prompt": "single full-body stealth operative sprite, side-on platformer style, transparent background, dramatic pre-rendered lighting, no text",
+        "prompt": "single full-body stealth operative sprite, side-on platformer style, edgy tactical outfit, photorealistic PBR textures, dramatic cinematic lighting, transparent background, no text",
     },
     "guard.png": {
         "size": "1024x1024",
-        "prompt": "single full-body security guard sprite, side-on platformer style, transparent background, pre-rendered game art, no text",
+        "prompt": "single full-body security guard sprite, side-on platformer style, hardened urban gear, photorealistic textures, transparent background, pre-rendered game art, no text",
     },
     "ninja.png": {
         "size": "1024x1024",
-        "prompt": "single full-body elite ninja enemy sprite, side-on platformer style, transparent background, pre-rendered game art, no text",
+        "prompt": "single full-body elite ninja enemy sprite, side-on platformer style, edgy dark armor, photorealistic material detail, transparent background, pre-rendered game art, no text",
     },
     "dog.png": {
         "size": "1024x1024",
-        "prompt": "single guard dog sprite, side-on platformer style, transparent background, pre-rendered game art, no text",
+        "prompt": "single guard dog sprite, side-on platformer style, photorealistic fur texture and harness, transparent background, pre-rendered game art, no text",
     },
     "terminal.png": {
         "size": "1024x1024",
-        "prompt": "single sci-fi hacking terminal object sprite, side-on platformer style, transparent background, pre-rendered game art",
+        "prompt": "single sci-fi hacking terminal object sprite, side-on platformer style, realistic metal wear and emissive screens, transparent background, pre-rendered game art",
     },
     "shuriken.png": {
         "size": "1024x1024",
-        "prompt": "single shuriken weapon sprite, centered, transparent background, pre-rendered game art",
+        "prompt": "single shuriken weapon sprite, centered, brushed steel photoreal detail, transparent background, pre-rendered game art",
     },
     "ladder.png": {
         "size": "1024x1024",
-        "prompt": "single metal ladder module sprite for platform game, transparent background, pre-rendered game art",
+        "prompt": "single metal ladder module sprite for platform game, industrial grime and paint wear, transparent background, pre-rendered game art",
     },
     "train.png": {
         "size": "1536x1024",
-        "prompt": "single side-view futuristic train car sprite for stealth platform game, transparent background, pre-rendered game art",
+        "prompt": "single side-view futuristic train car sprite for stealth platform game, gritty photorealistic materials and reflections, transparent background, pre-rendered game art",
     },
     "dinghy.png": {
         "size": "1024x1024",
-        "prompt": "single inflatable dinghy boat sprite, side view, transparent background, pre-rendered game art",
+        "prompt": "single inflatable dinghy boat sprite, side view, photorealistic rubber and wet surface detail, transparent background, pre-rendered game art",
     },
 }
 

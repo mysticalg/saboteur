@@ -1,7 +1,7 @@
 from collections import deque
 
 from core import JUMP_VELOCITY
-from level_data import SCREEN_H, build_level
+from level_data import SCREEN_H, WORLD_H, WORLD_Y_OFFSET, build_level
 
 
 def _platform_nodes():
@@ -43,9 +43,15 @@ def test_level_route_to_extraction_is_connected():
 
 def test_game_module_constants_for_vertical_space():
     assert SCREEN_H >= 700
+    assert WORLD_H >= SCREEN_H * 2
 
 
 def test_spawn_side_has_floor_under_water():
     solids = build_level()
     # Ensure there is a solid seabed under the initial water zone to prevent falling out.
-    assert any(s.x <= 64 <= s.x + s.w and s.y >= SCREEN_H - 40 for s in solids)
+    assert any(s.x <= 64 <= s.x + s.w and s.y >= SCREEN_H - 40 + WORLD_Y_OFFSET for s in solids)
+
+
+def test_has_upper_tower_routes_for_vertical_exploration():
+    solids = build_level()
+    assert any(s.y < WORLD_Y_OFFSET for s in solids)

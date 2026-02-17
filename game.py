@@ -17,6 +17,8 @@ from level_data import (
     SCREEN_H,
     SCREEN_W,
     WORLD_W,
+    WORLD_H,
+    WORLD_Y_OFFSET,
     build_bushes,
     build_ladders,
     build_level,
@@ -123,8 +125,21 @@ class Particle:
 
 
 class SpriteBank:
-    def __init__(self) -> None:
+    GENERATED_FILES = [
+        "player.png",
+        "guard.png",
+        "ninja.png",
+        "dog.png",
+        "terminal.png",
+        "shuriken.png",
+        "ladder.png",
+        "train.png",
+        "dinghy.png",
+    ]
+
+    def __init__(self, use_generated_assets: bool = True) -> None:
         self.asset_dir = Path("assets/generated")
+        self.use_generated_assets = use_generated_assets
         self.player = self._load_or_make("player.png", (32, 64), lambda: self._make_humanoid((226, 226, 236), (40, 42, 55), band=(200, 44, 44)))
         self.guard = self._load_or_make("guard.png", (32, 64), lambda: self._make_humanoid((228, 86, 100), (48, 26, 32), band=(70, 70, 70)))
         self.ninja = self._load_or_make("ninja.png", (32, 64), lambda: self._make_humanoid((50, 50, 56), (20, 20, 24), band=(220, 210, 120)))
@@ -135,9 +150,14 @@ class SpriteBank:
         self.train = self._load_or_make("train.png", (180, 64), self._make_train)
         self.dinghy = self._load_or_make("dinghy.png", (120, 48), self._make_dinghy)
 
+    @classmethod
+    def generated_assets_ready(cls, asset_dir: Path | None = None) -> bool:
+        directory = asset_dir or Path("assets/generated")
+        return all((directory / name).exists() for name in cls.GENERATED_FILES)
+
     def _load_or_make(self, filename: str, size: tuple[int, int], fallback: Callable[[], pygame.Surface]) -> pygame.Surface:
         path = self.asset_dir / filename
-        if path.exists():
+        if self.use_generated_assets and path.exists():
             loaded = pygame.image.load(str(path)).convert_alpha()
             return pygame.transform.smoothscale(loaded, size)
         return fallback()
@@ -211,8 +231,12 @@ class SaboteurReplica:
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("consolas", 20)
         self.big = pygame.font.SysFont("consolas", 42, bold=True)
+        self.medium = pygame.font.SysFont("consolas", 30, bold=True)
 
-        self.sprites = SpriteBank()
+        self.state = "splash"
+        self.use_openai_sprites = True
+        self.generated_assets_present = SpriteBank.generated_assets_ready()
+        self.sprites = SpriteBank(use_generated_assets=self.use_openai_sprites)
         self.solids = build_level()
         self.one_way = build_one_way_platforms()
         self.ladders = build_ladders()
@@ -221,6 +245,7 @@ class SaboteurReplica:
         self.physics = WorldPhysics(self.solids, one_way_platforms=self.one_way, ladders=self.ladders, water_zones=self.water)
 
         self.player = PlayerState(Actor(Rect(64, SCREEN_H - 140, 32, 64)))
+        self.player.actor.rect.y += WORLD_Y_OFFSET
         self.player.health = 8
         self.player.shots = 26
         self.facing = 1
@@ -236,35 +261,37 @@ class SaboteurReplica:
         self.rules = GameRules(self.bomb)
 
         self.pickups = [
-            Pickup("time_bomb", Rect(1520, 578, 22, 22), RED),
-            Pickup("keycard", Rect(3220, 638, 22, 22), BLUE),
-            Pickup("train_token", Rect(6190, 638, 22, 22), CYAN),
-            Pickup("engineering_codes", Rect(8060, 338, 22, 22), YELLOW),
-            Pickup("vault_relay", Rect(9460, 248, 22, 22), ORANGE),
+            Pickup("time_bomb", Rect(1520, 578 + WORLD_Y_OFFSET, 22, 22), RED),
+            Pickup("keycard", Rect(3220, 638 + WORLD_Y_OFFSET, 22, 22), BLUE),
+            Pickup("train_token", Rect(6190, 638 + WORLD_Y_OFFSET, 22, 22), CYAN),
+            Pickup("engineering_codes", Rect(8060, 338 + WORLD_Y_OFFSET, 22, 22), YELLOW),
+            Pickup("vault_relay", Rect(9460, 248 + WORLD_Y_OFFSET, 22, 22), ORANGE),
         ]
-        self.terminal = Rect(9120, 290, 34, 48)
-        self.exit_pad = Rect(9630, 306, 140, 26)
+        self.terminal = Rect(9120, 290 + WORLD_Y_OFFSET, 34, 48)
+        self.exit_pad = Rect(9630, 306 + WORLD_Y_OFFSET, 140, 26)
         self.areas = [
-            AreaLabel("SHORE ENTRY", Rect(120, 594, 320, 58), (76, 130, 180)),
-            AreaLabel("MAINTENANCE STAIRS", Rect(2860, 586, 420, 58), (110, 130, 155)),
-            AreaLabel("MONORAIL ACCESS", Rect(5200, 586, 420, 58), (136, 116, 170)),
-            AreaLabel("SKYSCRAPER SECURITY", Rect(7220, 618, 540, 52), (136, 82, 92)),
-            AreaLabel("STORAGE AREA", Rect(7920, 554, 560, 52), (124, 112, 90)),
-            AreaLabel("SERVER ROOMS", Rect(7580, 426, 580, 52), (80, 132, 146)),
-            AreaLabel("GUARD POSTS", Rect(8440, 362, 540, 52), (144, 96, 96)),
-            AreaLabel("HEADQUARTERS", Rect(8200, 170, 600, 62), (150, 116, 78)),
+            AreaLabel("SHORE ENTRY", Rect(120, 594 + WORLD_Y_OFFSET, 320, 58), (76, 130, 180)),
+            AreaLabel("MAINTENANCE STAIRS", Rect(2860, 586 + WORLD_Y_OFFSET, 420, 58), (110, 130, 155)),
+            AreaLabel("MONORAIL ACCESS", Rect(5200, 586 + WORLD_Y_OFFSET, 420, 58), (136, 116, 170)),
+            AreaLabel("SKYSCRAPER SECURITY", Rect(7220, 618 + WORLD_Y_OFFSET, 540, 52), (136, 82, 92)),
+            AreaLabel("STORAGE AREA", Rect(7920, 554 + WORLD_Y_OFFSET, 560, 52), (124, 112, 90)),
+            AreaLabel("SERVER ROOMS", Rect(7580, 426 + WORLD_Y_OFFSET, 580, 52), (80, 132, 146)),
+            AreaLabel("GUARD POSTS", Rect(8440, 362 + WORLD_Y_OFFSET, 540, 52), (144, 96, 96)),
+            AreaLabel("HEADQUARTERS", Rect(8200, 170 + WORLD_Y_OFFSET, 600, 62), (150, 116, 78)),
+            AreaLabel("TOWER CORE", Rect(7620, 280, 700, 52), (108, 102, 120)),
+            AreaLabel("SKY TERRACES", Rect(8120, 118, 640, 48), (96, 136, 142)),
         ]
 
 
         self.enemies: list[Enemy] = [
-            Enemy(Actor(Rect(1320, 554, 30, 56)), "guard", 1200, 1760, 94, hp=2, max_hp=2),
-            Enemy(Actor(Rect(2040, 514, 30, 56)), "ninja", 1900, 2480, 116, hp=3, max_hp=3),
-            Enemy(Actor(Rect(3120, 624, 30, 56)), "guard", 3040, 4440, 120, hp=3, max_hp=3),
-            Enemy(Actor(Rect(4860, 414, 30, 56)), "heavy", 4680, 5440, 92, hp=5, max_hp=5),
-            Enemy(Actor(Rect(6520, 624, 42, 44)), "dog", 6460, 8040, 152, hp=2, max_hp=2),
-            Enemy(Actor(Rect(8460, 294, 30, 56)), "ninja", 8340, 9400, 146, hp=4, max_hp=4),
-            Enemy(Actor(Rect(7580, 562, 30, 56)), "guard", 7420, 8200, 118, hp=3, max_hp=3),
-            Enemy(Actor(Rect(8780, 498, 30, 56)), "drone", 8600, 9380, 160, hp=2, max_hp=2),
+            Enemy(Actor(Rect(1320, 554 + WORLD_Y_OFFSET, 30, 56)), "guard", 1200, 1760, 94, hp=2, max_hp=2),
+            Enemy(Actor(Rect(2040, 514 + WORLD_Y_OFFSET, 30, 56)), "ninja", 1900, 2480, 116, hp=3, max_hp=3),
+            Enemy(Actor(Rect(3120, 624 + WORLD_Y_OFFSET, 30, 56)), "guard", 3040, 4440, 120, hp=3, max_hp=3),
+            Enemy(Actor(Rect(4860, 414 + WORLD_Y_OFFSET, 30, 56)), "heavy", 4680, 5440, 92, hp=5, max_hp=5),
+            Enemy(Actor(Rect(6520, 624 + WORLD_Y_OFFSET, 42, 44)), "dog", 6460, 8040, 152, hp=2, max_hp=2),
+            Enemy(Actor(Rect(8460, 294 + WORLD_Y_OFFSET, 30, 56)), "ninja", 8340, 9400, 146, hp=4, max_hp=4),
+            Enemy(Actor(Rect(7580, 562 + WORLD_Y_OFFSET, 30, 56)), "guard", 7420, 8200, 118, hp=3, max_hp=3),
+            Enemy(Actor(Rect(8780, 498 + WORLD_Y_OFFSET, 30, 56)), "drone", 8600, 9380, 160, hp=2, max_hp=2),
             Enemy(Actor(Rect(8420, 178, 30, 56)), "boss", 8260, 9000, 126, hp=10, max_hp=10, boss=True),
             Enemy(Actor(Rect(9180, 114, 30, 56)), "boss", 8960, 9520, 134, hp=12, max_hp=12, boss=True),
         ]
@@ -273,9 +300,12 @@ class SaboteurReplica:
         self.drops: list[Drop] = []
         self.particles: list[Particle] = []
         self.camera_x = 0.0
+        self.camera_y = float(WORLD_Y_OFFSET)
         self.failed = False
         self.won = False
         self.time_alive = 0.0
+        self.anim_time = 0.0
+        self.drop_through_timer = 0.0
 
         track_y, self.train_min_x, self.train_max_x = build_train_track()
         self.train_rect = Rect(self.train_min_x, track_y - 58, 180, 64)
@@ -285,7 +315,7 @@ class SaboteurReplica:
         while True:
             dt = self.clock.tick(60) / 1000
             self._events()
-            if not self.failed and not self.won:
+            if self.state == "playing" and not self.failed and not self.won:
                 self._update(dt)
             self._draw()
 
@@ -294,21 +324,52 @@ class SaboteurReplica:
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit(0)
-            if event.type == pygame.KEYDOWN and (self.failed or self.won) and event.key == pygame.K_r:
+            if event.type != pygame.KEYDOWN:
+                continue
+
+            if self.state == "splash":
+                if event.key in {pygame.K_RETURN, pygame.K_SPACE}:
+                    self.state = "playing"
+                elif event.key == pygame.K_o:
+                    self.state = "options"
+                elif event.key in {pygame.K_ESCAPE, pygame.K_q}:
+                    pygame.quit()
+                    sys.exit(0)
+                continue
+
+            if self.state == "options":
+                if event.key in {pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN, pygame.K_SPACE}:
+                    self._toggle_sprite_mode()
+                elif event.key in {pygame.K_ESCAPE, pygame.K_BACKSPACE, pygame.K_o}:
+                    self.state = "splash"
+                continue
+
+            if (self.failed or self.won) and event.key == pygame.K_r:
                 self.__init__()
-            if event.type == pygame.KEYDOWN and not (self.failed or self.won):
-                if event.key == pygame.K_SPACE and (self.player.actor.on_ground or self.player.actor.in_water or self.player.actor.on_ladder):
-                    self.player.actor.vy = JUMP_VELOCITY * (0.58 if self.player.actor.in_water else 1.0)
-                if event.key == pygame.K_z:
-                    self._throw_shuriken()
-                if event.key == pygame.K_x:
-                    self._start_melee("punch")
-                if event.key == pygame.K_c:
-                    self._start_melee("kick")
-                if event.key == pygame.K_v:
-                    self._start_melee("flying_kick")
-                if event.key == pygame.K_e and self.player.actor.rect.intersects(self.terminal):
-                    self.rules.defuse_bomb()
+                self.state = "playing"
+                continue
+
+            if self.failed or self.won:
+                continue
+
+            down_pressed = pygame.key.get_pressed()[pygame.K_DOWN] or pygame.key.get_pressed()[pygame.K_s]
+            if event.key == pygame.K_SPACE and down_pressed and self.player.actor.on_ground:
+                self.drop_through_timer = 0.18
+                self.player.actor.rect.y += 4
+            elif event.key == pygame.K_SPACE and (self.player.actor.on_ground or self.player.actor.in_water or self.player.actor.on_ladder):
+                self.player.actor.vy = JUMP_VELOCITY * (0.58 if self.player.actor.in_water else 1.0)
+            if event.key == pygame.K_z:
+                self._throw_shuriken()
+            if event.key == pygame.K_x:
+                self._start_melee("punch")
+            if event.key == pygame.K_c:
+                self._start_melee("kick")
+            if event.key == pygame.K_v:
+                self._start_melee("flying_kick")
+            if event.key == pygame.K_e and self.player.actor.rect.intersects(self.terminal):
+                self.rules.defuse_bomb()
+            if event.key == pygame.K_ESCAPE:
+                self.state = "splash"
 
     def _throw_shuriken(self) -> None:
         if self.player.shots <= 0:
@@ -334,6 +395,8 @@ class SaboteurReplica:
 
     def _update(self, dt: float) -> None:
         self.time_alive += dt
+        self.anim_time += dt
+        self.drop_through_timer = max(0.0, self.drop_through_timer - dt)
         self.attack_cd = max(0.0, self.attack_cd - dt)
         self.invisibility_timer = max(0.0, self.invisibility_timer - dt)
         self.invincibility_timer = max(0.0, self.invincibility_timer - dt)
@@ -358,10 +421,12 @@ class SaboteurReplica:
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
             climb_dir = 1
 
-        drop_down = (keys[pygame.K_DOWN] or keys[pygame.K_s]) and keys[pygame.K_SPACE]
+        drop_down = self.drop_through_timer > 0 or ((keys[pygame.K_DOWN] or keys[pygame.K_s]) and keys[pygame.K_SPACE])
         self.hidden = keys[pygame.K_DOWN] and any(self.player.actor.rect.intersects(b) for b in self.bushes)
 
         self.physics.move_actor(self.player.actor, dt, drop_down=drop_down, climb_dir=climb_dir)
+        self.player.actor.rect.x = max(0, min(WORLD_W - self.player.actor.rect.w, self.player.actor.rect.x))
+        self.player.actor.rect.y = max(0, min(WORLD_H - self.player.actor.rect.h, self.player.actor.rect.y))
         self._update_train(dt)
         for e in self.enemies:
             e.update(dt, self.physics)
@@ -378,6 +443,8 @@ class SaboteurReplica:
 
         target = self.player.actor.rect.x - SCREEN_W * 0.45
         self.camera_x = max(0, min(WORLD_W - SCREEN_W, target))
+        target_y = self.player.actor.rect.y - SCREEN_H * 0.52
+        self.camera_y = max(0, min(WORLD_H - SCREEN_H, target_y))
 
     def _update_train(self, dt: float) -> None:
         self.train_rect.x += self.train_speed * dt
@@ -551,7 +618,29 @@ class SaboteurReplica:
 
     def _draw_sprite(self, rect: Rect, sprite: pygame.Surface, flip: bool = False) -> None:
         image = pygame.transform.flip(sprite, flip, False) if flip else sprite
-        self.screen.blit(image, (rect.x - self.camera_x, rect.y))
+        self.screen.blit(image, (rect.x - self.camera_x, rect.y - self.camera_y))
+
+    def _draw_sprite_at(self, x: float, y: float, sprite: pygame.Surface, flip: bool = False) -> None:
+        image = pygame.transform.flip(sprite, flip, False) if flip else sprite
+        self.screen.blit(image, (x - self.camera_x, y - self.camera_y))
+
+    def _draw_character_animated(self, rect: Rect, sprite: pygame.Surface, flip: bool = False, moving: bool = False, fast: bool = False, airborne: bool = False) -> None:
+        sway = 0.0
+        bob = 0.0
+        if airborne:
+            bob = 1.0 * math.sin(self.anim_time * 20)
+        elif moving:
+            speed = 24 if fast else 16
+            sway = 1.4 * math.sin(self.anim_time * speed)
+            bob = 1.5 * abs(math.sin(self.anim_time * speed * 0.7))
+        self._draw_sprite_at(rect.x + sway, rect.y - bob, sprite, flip)
+
+    def _draw_spinning_shuriken(self, rect: Rect) -> None:
+        angle = (self.anim_time * 1600) % 360
+        rotated = pygame.transform.rotozoom(self.sprites.shuriken, angle, 1.0)
+        cx = rect.x + rect.w / 2 - self.camera_x
+        cy = rect.y + rect.h / 2 - self.camera_y
+        self.screen.blit(rotated, rotated.get_rect(center=(cx, cy)))
 
     def _draw_world(self) -> None:
         for y in range(SCREEN_H):
@@ -564,11 +653,12 @@ class SaboteurReplica:
 
         for zone in self.water:
             sx = zone.x - self.camera_x
-            pygame.draw.rect(self.screen, WATER, pygame.Rect(sx, zone.y, zone.w, zone.h))
+            sy = zone.y - self.camera_y
+            pygame.draw.rect(self.screen, WATER, pygame.Rect(sx, sy, zone.w, zone.h))
             for i in range(0, int(zone.w), 38):
                 wave = int(4 * math.sin(self.time_alive * 4 + i * 0.1))
-                pygame.draw.line(self.screen, WATER_FOAM, (sx + i, zone.y + 10 + wave), (sx + i + 20, zone.y + 10 + wave), 2)
-            pygame.draw.rect(self.screen, (54, 46, 34), pygame.Rect(sx, SCREEN_H - 24, zone.w, 24))
+                pygame.draw.line(self.screen, WATER_FOAM, (sx + i, sy + 10 + wave), (sx + i + 20, sy + 10 + wave), 2)
+            pygame.draw.rect(self.screen, (54, 46, 34), pygame.Rect(sx, SCREEN_H - 24 - self.camera_y + WORLD_Y_OFFSET, zone.w, 24))
 
         for x in range(0, SCREEN_W, 120):
             h = 120 + int(30 * math.sin((x + self.camera_x * 0.2) * 0.02))
@@ -588,93 +678,153 @@ class SaboteurReplica:
 
         for bush in self.bushes:
             sx = bush.x - self.camera_x
-            pygame.draw.ellipse(self.screen, (42, 122, 72), pygame.Rect(sx, bush.y, bush.w, bush.h))
+            pygame.draw.ellipse(self.screen, (42, 122, 72), pygame.Rect(sx, bush.y - self.camera_y, bush.w, bush.h))
 
         for area in self.areas:
             sx = area.rect.x - self.camera_x
+            sy = area.rect.y - self.camera_y
             if sx > SCREEN_W or sx + area.rect.w < -8:
                 continue
-            pygame.draw.rect(self.screen, area.color, pygame.Rect(sx, area.rect.y, area.rect.w, area.rect.h), border_radius=6)
-            pygame.draw.rect(self.screen, (18, 22, 30), pygame.Rect(sx, area.rect.y, area.rect.w, area.rect.h), width=2, border_radius=6)
+            pygame.draw.rect(self.screen, area.color, pygame.Rect(sx, sy, area.rect.w, area.rect.h), border_radius=6)
+            pygame.draw.rect(self.screen, (18, 22, 30), pygame.Rect(sx, sy, area.rect.w, area.rect.h), width=2, border_radius=6)
             label = self.font.render(area.name, True, (240, 242, 248))
-            self.screen.blit(label, (sx + 12, area.rect.y + 16))
+            self.screen.blit(label, (sx + 12, sy + 16))
 
         # Elevator shafts and monorail supports inside the tower.
         for shaft_x in (7420, 8080, 8740, 9320):
             sx = shaft_x - self.camera_x
-            pygame.draw.rect(self.screen, (48, 54, 70), pygame.Rect(sx, 92, 52, 586), border_radius=3)
+            pygame.draw.rect(self.screen, (48, 54, 70), pygame.Rect(sx, 92 - self.camera_y + WORLD_Y_OFFSET, 52, 586), border_radius=3)
             for y in range(116, 650, 64):
-                pygame.draw.rect(self.screen, (104, 118, 146), pygame.Rect(sx + 6, y, 40, 20), border_radius=2)
+                pygame.draw.rect(self.screen, (104, 118, 146), pygame.Rect(sx + 6, y - self.camera_y + WORLD_Y_OFFSET, 40, 20), border_radius=2)
 
-        pygame.draw.rect(self.screen, (84, 96, 128), pygame.Rect(7240 - self.camera_x, 122, 2220, 8))
+        pygame.draw.rect(self.screen, (84, 96, 128), pygame.Rect(7240 - self.camera_x, 122 - self.camera_y + WORLD_Y_OFFSET, 2220, 8))
         for i in range(7240, 9460, 58):
-            pygame.draw.rect(self.screen, (152, 166, 198), pygame.Rect(i - self.camera_x, 126, 34, 5), border_radius=1)
+            pygame.draw.rect(self.screen, (152, 166, 198), pygame.Rect(i - self.camera_x, 126 - self.camera_y + WORLD_Y_OFFSET, 34, 5), border_radius=1)
 
         for s in self.solids:
             sx = s.x - self.camera_x
             if sx > SCREEN_W or sx + s.w < -4:
                 continue
-            pygame.draw.rect(self.screen, PLATFORM_SIDE, pygame.Rect(sx, s.y, s.w, s.h), border_radius=2)
-            pygame.draw.rect(self.screen, PLATFORM_TOP, pygame.Rect(sx, s.y, s.w, 4), border_radius=2)
+            sy = s.y - self.camera_y
+            pygame.draw.rect(self.screen, PLATFORM_SIDE, pygame.Rect(sx, sy, s.w, s.h), border_radius=2)
+            pygame.draw.rect(self.screen, PLATFORM_TOP, pygame.Rect(sx, sy, s.w, 4), border_radius=2)
 
         for p in self.one_way:
             sx = p.x - self.camera_x
             if sx > SCREEN_W or sx + p.w < -4:
                 continue
-            pygame.draw.rect(self.screen, (90, 100, 124), pygame.Rect(sx, p.y, p.w, p.h), border_radius=2)
-            pygame.draw.line(self.screen, (180, 190, 210), (sx, p.y), (sx + p.w, p.y), 2)
+            sy = p.y - self.camera_y
+            pygame.draw.rect(self.screen, (90, 100, 124), pygame.Rect(sx, sy, p.w, p.h), border_radius=2)
+            pygame.draw.line(self.screen, (180, 190, 210), (sx, sy), (sx + p.w, sy), 2)
 
         for ladder in self.ladders:
             for seg in range(int(ladder.h // 68) + 1):
                 y = ladder.y + seg * 68
-                self.screen.blit(self.sprites.ladder, (ladder.x - self.camera_x, y))
+                self.screen.blit(self.sprites.ladder, (ladder.x - self.camera_x, y - self.camera_y))
 
-        self.screen.blit(self.sprites.train, (self.train_rect.x - self.camera_x, self.train_rect.y))
-        pygame.draw.rect(self.screen, (60, 62, 70), pygame.Rect(self.train_min_x - self.camera_x, self.train_rect.y + 58, self.train_max_x - self.train_min_x, 6))
+        self.screen.blit(self.sprites.train, (self.train_rect.x - self.camera_x, self.train_rect.y - self.camera_y))
+        pygame.draw.rect(self.screen, (60, 62, 70), pygame.Rect(self.train_min_x - self.camera_x, self.train_rect.y + 58 - self.camera_y, self.train_max_x - self.train_min_x, 6))
 
         self.screen.blit(self.sprites.dinghy, (24 - self.camera_x * 0.03, SCREEN_H - 120))
 
+    def _toggle_sprite_mode(self) -> None:
+        self.use_openai_sprites = not self.use_openai_sprites
+        self.generated_assets_present = SpriteBank.generated_assets_ready()
+        self.sprites = SpriteBank(use_generated_assets=self.use_openai_sprites)
+
+    def _draw_splash(self) -> None:
+        self.screen.fill((8, 10, 18))
+        title = self.big.render("SABOTEUR REPLICA", True, (236, 238, 248))
+        subtitle = self.medium.render("Vertical + Horizontal Infiltration", True, (136, 196, 214))
+        hint1 = self.font.render("ENTER = Start Mission", True, (220, 220, 230))
+        hint2 = self.font.render("O = Options", True, (220, 220, 230))
+        hint3 = self.font.render("Q / ESC = Quit", True, (190, 190, 205))
+        mode = "ON (generated if files exist)" if self.use_openai_sprites else "OFF (procedural art only)"
+        status = self.font.render(f"OpenAI sprites: {mode}", True, (120, 226, 170))
+        files = "ready" if self.generated_assets_present else "not found"
+        files_line = self.font.render(f"Generated sprite files: {files}", True, (180, 190, 210))
+        self.screen.blit(title, (SCREEN_W // 2 - title.get_width() // 2, 170))
+        self.screen.blit(subtitle, (SCREEN_W // 2 - subtitle.get_width() // 2, 230))
+        self.screen.blit(hint1, (SCREEN_W // 2 - hint1.get_width() // 2, 340))
+        self.screen.blit(hint2, (SCREEN_W // 2 - hint2.get_width() // 2, 376))
+        self.screen.blit(hint3, (SCREEN_W // 2 - hint3.get_width() // 2, 412))
+        self.screen.blit(status, (SCREEN_W // 2 - status.get_width() // 2, 500))
+        self.screen.blit(files_line, (SCREEN_W // 2 - files_line.get_width() // 2, 532))
+        pygame.display.flip()
+
+    def _draw_options(self) -> None:
+        self.screen.fill((12, 16, 26))
+        title = self.big.render("OPTIONS", True, (240, 240, 246))
+        mode = "ON" if self.use_openai_sprites else "OFF"
+        mode_desc = "Use generated sprites when PNG files exist." if self.use_openai_sprites else "Always use built-in procedural sprites."
+        row = self.medium.render(f"OpenAI sprites: {mode}", True, (120, 226, 170) if self.use_openai_sprites else (226, 166, 120))
+        row2 = self.font.render(mode_desc, True, (212, 214, 224))
+        files = "All required files found." if self.generated_assets_present else "Generated files missing (game will fallback safely)."
+        row3 = self.font.render(files, True, (182, 192, 212))
+        help1 = self.font.render("LEFT/RIGHT or ENTER: toggle", True, (220, 220, 230))
+        help2 = self.font.render("ESC/BACKSPACE/O: back", True, (220, 220, 230))
+        self.screen.blit(title, (SCREEN_W // 2 - title.get_width() // 2, 150))
+        self.screen.blit(row, (SCREEN_W // 2 - row.get_width() // 2, 290))
+        self.screen.blit(row2, (SCREEN_W // 2 - row2.get_width() // 2, 332))
+        self.screen.blit(row3, (SCREEN_W // 2 - row3.get_width() // 2, 360))
+        self.screen.blit(help1, (SCREEN_W // 2 - help1.get_width() // 2, 470))
+        self.screen.blit(help2, (SCREEN_W // 2 - help2.get_width() // 2, 502))
+        pygame.display.flip()
+
     def _draw_pickup(self, item: Pickup) -> None:
         cx = int(item.rect.x - self.camera_x + 11)
-        cy = int(item.rect.y + 11)
+        cy = int(item.rect.y - self.camera_y + 11)
         pulse = 1.0 + 0.15 * math.sin(self.time_alive * 6 + item.rect.x * 0.02)
         radius = int(10 * pulse)
         pygame.draw.circle(self.screen, (255, 255, 255), (cx, cy), radius + 2, width=1)
         pygame.draw.circle(self.screen, item.color, (cx, cy), radius)
 
     def _draw(self) -> None:
+        if self.state == "splash":
+            self._draw_splash()
+            return
+        if self.state == "options":
+            self._draw_options()
+            return
+
         self._draw_world()
 
         for item in self.pickups:
             if not item.taken:
                 self._draw_pickup(item)
 
-        self._draw_sprite(self.terminal, self.sprites.terminal)
-        pygame.draw.rect(self.screen, ORANGE, pygame.Rect(self.exit_pad.x - self.camera_x, self.exit_pad.y, self.exit_pad.w, self.exit_pad.h), border_radius=4)
-        self.screen.blit(self.font.render("EXTRACT", True, (22, 22, 24)), (self.exit_pad.x - self.camera_x + 26, self.exit_pad.y + 2))
+        terminal_glow = 0.84 + 0.16 * (0.5 + 0.5 * math.sin(self.anim_time * 10.0))
+        terminal_frame = self.sprites.terminal.copy()
+        terminal_frame.set_alpha(int(255 * terminal_glow))
+        self._draw_sprite(self.terminal, terminal_frame)
+        pygame.draw.rect(self.screen, ORANGE, pygame.Rect(self.exit_pad.x - self.camera_x, self.exit_pad.y - self.camera_y, self.exit_pad.w, self.exit_pad.h), border_radius=4)
+        self.screen.blit(self.font.render("EXTRACT", True, (22, 22, 24)), (self.exit_pad.x - self.camera_x + 26, self.exit_pad.y - self.camera_y + 2))
 
         for e in self.enemies:
             if not e.alive:
                 continue
             if e.kind in {"guard", "heavy"}:
-                self._draw_sprite(e.actor.rect, self.sprites.guard, e.speed < 0)
+                moving = abs(e.actor.vx) > 1
+                self._draw_character_animated(e.actor.rect, self.sprites.guard, e.speed < 0, moving=moving, fast=abs(e.speed) > 110, airborne=not e.actor.on_ground)
                 if e.kind == "heavy":
-                    pygame.draw.rect(self.screen, (90, 90, 105), pygame.Rect(e.actor.rect.x - self.camera_x - 2, e.actor.rect.y - 2, e.actor.rect.w + 4, e.actor.rect.h + 4), width=2, border_radius=3)
+                    pygame.draw.rect(self.screen, (90, 90, 105), pygame.Rect(e.actor.rect.x - self.camera_x - 2, e.actor.rect.y - self.camera_y - 2, e.actor.rect.w + 4, e.actor.rect.h + 4), width=2, border_radius=3)
             elif e.kind in {"ninja", "boss", "drone"}:
-                self._draw_sprite(e.actor.rect, self.sprites.ninja, e.speed < 0)
+                moving = abs(e.actor.vx) > 1
+                self._draw_character_animated(e.actor.rect, self.sprites.ninja, e.speed < 0, moving=moving, fast=abs(e.speed) > 130, airborne=not e.actor.on_ground)
                 if e.kind == "boss":
-                    pygame.draw.rect(self.screen, ORANGE, pygame.Rect(e.actor.rect.x - self.camera_x - 4, e.actor.rect.y - 4, e.actor.rect.w + 8, e.actor.rect.h + 8), width=2, border_radius=4)
+                    pygame.draw.rect(self.screen, ORANGE, pygame.Rect(e.actor.rect.x - self.camera_x - 4, e.actor.rect.y - self.camera_y - 4, e.actor.rect.w + 8, e.actor.rect.h + 8), width=2, border_radius=4)
                 if e.kind == "drone":
-                    pygame.draw.circle(self.screen, CYAN, (int(e.actor.rect.x - self.camera_x + e.actor.rect.w / 2), int(e.actor.rect.y - 8)), 7, width=2)
+                    pygame.draw.circle(self.screen, CYAN, (int(e.actor.rect.x - self.camera_x + e.actor.rect.w / 2), int(e.actor.rect.y - self.camera_y - 8)), 7, width=2)
             else:
-                self._draw_sprite(e.actor.rect, self.sprites.dog, e.speed < 0)
+                moving = abs(e.actor.vx) > 1
+                self._draw_character_animated(e.actor.rect, self.sprites.dog, e.speed < 0, moving=moving, fast=True, airborne=not e.actor.on_ground)
 
         for p in self.projectiles:
-            self._draw_sprite(p.rect, self.sprites.shuriken)
+            self._draw_spinning_shuriken(p.rect)
 
         for drop in self.drops:
             sx = int(drop.rect.x - self.camera_x + drop.rect.w / 2)
-            sy = int(drop.rect.y + drop.rect.h / 2)
+            sy = int(drop.rect.y - self.camera_y + drop.rect.h / 2)
             if drop.kind == "gold":
                 pygame.draw.circle(self.screen, GOLD, (sx, sy), 10)
             elif drop.kind == "invisibility":
@@ -685,19 +835,21 @@ class SaboteurReplica:
                 pygame.draw.polygon(self.screen, GREEN, [(sx, sy - 10), (sx + 10, sy), (sx, sy + 10), (sx - 10, sy)])
 
         for p in self.particles:
-            pygame.draw.circle(self.screen, p.color, (int(p.x - self.camera_x), int(p.y)), p.size)
+            pygame.draw.circle(self.screen, p.color, (int(p.x - self.camera_x), int(p.y - self.camera_y)), p.size)
 
         if self.attack:
-            pygame.draw.rect(self.screen, (180, 255, 180), pygame.Rect(self.attack.rect.x - self.camera_x, self.attack.rect.y, self.attack.rect.w, self.attack.rect.h), width=2, border_radius=4)
+            pygame.draw.rect(self.screen, (180, 255, 180), pygame.Rect(self.attack.rect.x - self.camera_x, self.attack.rect.y - self.camera_y, self.attack.rect.w, self.attack.rect.h), width=2, border_radius=4)
 
         if self.invisibility_timer > 0:
             ghost = self.sprites.player.copy()
             ghost.set_alpha(120)
-            self._draw_sprite(self.player.actor.rect, ghost, self.facing < 0)
+            moving = abs(self.player.actor.vx) > 1
+            self._draw_character_animated(self.player.actor.rect, ghost, self.facing < 0, moving=moving, fast=abs(self.player.actor.vx) > RUN_SPEED, airborne=not self.player.actor.on_ground)
         else:
-            self._draw_sprite(self.player.actor.rect, self.sprites.player, self.facing < 0)
+            moving = abs(self.player.actor.vx) > 1
+            self._draw_character_animated(self.player.actor.rect, self.sprites.player, self.facing < 0, moving=moving, fast=abs(self.player.actor.vx) > RUN_SPEED, airborne=not self.player.actor.on_ground)
         if self.hidden:
-            self.screen.blit(self.font.render("HIDDEN", True, GREEN), (self.player.actor.rect.x - self.camera_x - 4, self.player.actor.rect.y - 22))
+            self.screen.blit(self.font.render("HIDDEN", True, GREEN), (self.player.actor.rect.x - self.camera_x - 4, self.player.actor.rect.y - self.camera_y - 22))
 
         hud = (
             f"ZONE:{min(12, int((self.player.actor.rect.x / WORLD_W) * 12) + 1)}/12 HP:{self.player.health} SHURIKEN:{self.player.shots} "
@@ -708,7 +860,10 @@ class SaboteurReplica:
         self.screen.blit(self.font.render(hud, True, WHITE), (14, 12))
         buffs = f"BUFFS INVIS:{self.invisibility_timer:04.1f}s INVINC:{self.invincibility_timer:04.1f}s SPEED:{self.speed_timer:04.1f}s"
         self.screen.blit(self.font.render(buffs, True, (176, 224, 214)), (14, 62))
-        controls = "Move:A/D Jump:Space Drop:Down+Space Climb:W/S Crouch/Hide:Down Sprint:Shift Throw:Z Interact:E"
+        sprite_mode = "ON" if self.use_openai_sprites else "OFF"
+        self.screen.blit(self.font.render(f"OPENAI SPRITES:{sprite_mode}", True, (168, 192, 232)), (14, 112))
+        self.screen.blit(self.font.render("ANIMATION:60FPS LOOP", True, (168, 212, 168)), (14, 136))
+        controls = "Move:A/D Jump:Space Drop:Down+Space Climb:W/S Crouch/Hide:Down Sprint:Shift Throw:Z Interact:E ESC:Menu"
         self.screen.blit(self.font.render(controls, True, (200, 210, 230)), (14, 86))
 
         if self.failed:

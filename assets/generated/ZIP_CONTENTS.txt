@@ -1,0 +1,9 @@
+dinghy.png
+dog.png
+guard.png
+ladder.png
+ninja.png
+player.png
+shuriken.png
+terminal.png
+train.png

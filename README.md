@@ -8,6 +8,7 @@ This version now includes:
 - Classic mission items (bomb + codes + extra collectibles)
 - Ninja enemies, guards, and dog patrols
 - Melee + shuriken combat
+- 60 FPS animation pass (character bob/sway + spinning shuriken + terminal flicker)
 - 1-hour mission timer, terminal defuse, and extraction objective
 
 ## Install & Run
@@ -21,6 +22,13 @@ python game.py
 
 ## Controls
 
+### Splash / Options
+- Start mission: `Enter` (or `Space`) from splash
+- Open options: `O` from splash
+- Toggle OpenAI sprite mode in options: `Left/Right`, `Enter`, or `Space`
+- Back from options: `Esc`, `Backspace`, or `O`
+
+### In Mission
 - Move: `A / D` or arrow keys
 - Jump: `Space`
 - Throw shuriken: `Z`
@@ -28,6 +36,7 @@ python game.py
 - Kick: `C`
 - Flying kick: `V`
 - Interact/defuse: `E`
+- Return to splash menu: `Esc`
 - Restart after win/loss: `R`
 
 ## Mission Flow
@@ -46,6 +55,14 @@ You fail if health reaches 0 or the timer expires.
 - The project includes an automated level-connectivity test that validates there is a route from the spawn side to extraction.
 - Core simulation logic is covered by unit tests for collision and bomb mission rules.
 
+
+## Do I need to plug in to OpenAI for sprites?
+
+Short answer: **No, not to play the game.**
+
+- The game runs without OpenAI and will use built-in procedural sprites by default/fallback.
+- You only need an OpenAI API key if you want to **generate new PNG sprite files** via `scripts/generate_openai_sprites.py`.
+- Once PNGs are generated into `assets/generated/`, the game can load them locally (no live API call while playing).
 
 ## OpenAI pre-rendered sprite pipeline
 
