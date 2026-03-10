@@ -62,9 +62,9 @@ const keys={},pressed={};
 window.addEventListener('keydown',e=>{
   // Speed selection on splash screen
   if(gameState==='SPLASH'&&splashT>100){
-    if(e.key==='1'){gameSpeed=0.65;speedSelected=true;e.preventDefault();return;}
-    if(e.key==='2'){gameSpeed=1.0;speedSelected=true;e.preventDefault();return;}
-    if(e.key==='3'){gameSpeed=1.4;speedSelected=true;e.preventDefault();return;}
+    if(e.key==='1'){gameSpeed=0.42;speedSelected=true;e.preventDefault();return;}
+    if(e.key==='2'){gameSpeed=0.78;speedSelected=true;e.preventDefault();return;}
+    if(e.key==='3'){gameSpeed=1.0;speedSelected=true;e.preventDefault();return;}
   }
   if(!keys[e.code])pressed[e.code]=true;
   keys[e.code]=true;
@@ -84,8 +84,11 @@ function updateShake(){
 }
 
 // ── GAME SPEED ────────────────────────────────────────────────────────────────
-let gameSpeed=1.0;
+let gameSpeed=0.78;
 let speedSelected=false;
+// Fixed-step pacing accumulator. Values below 1.0 intentionally skip simulation
+// updates on some render frames so all physics/timers/combat slow down evenly.
+let simAccumulator=0;
 
 // ── MAP ───────────────────────────────────────────────────────────────────────
 const map=new Uint8Array(MW*MH);
@@ -1271,15 +1274,15 @@ function drawSplash(){
     ctx.fillStyle='#ffcc44';ctx.fillText('SELECT GAME SPEED:',VW/2-45,VH-38);
     ctx.font='5px monospace';
     // Slow
-    const slowCol=gameSpeed===0.65?'#00ff44':'#aaaaaa';
+    const slowCol=gameSpeed===0.42?'#00ff44':'#aaaaaa';
     ctx.fillStyle=slowCol;ctx.fillRect(VW/2-75,VH-32,30,8);
     ctx.fillStyle='#000';ctx.font='5px monospace';ctx.fillText('SLOW',VW/2-73,VH-26);
     // Normal
-    const normCol=gameSpeed===1.0?'#00ff44':'#aaaaaa';
+    const normCol=gameSpeed===0.78?'#00ff44':'#aaaaaa';
     ctx.fillStyle=normCol;ctx.fillRect(VW/2-40,VH-32,30,8);
     ctx.fillStyle='#000';ctx.fillText('NORMAL',VW/2-38,VH-26);
     // Fast
-    const fastCol=gameSpeed===1.4?'#00ff44':'#aaaaaa';
+    const fastCol=gameSpeed===1.0?'#00ff44':'#aaaaaa';
     ctx.fillStyle=fastCol;ctx.fillRect(VW/2-5,VH-32,30,8);
     ctx.fillStyle='#000';ctx.fillText('FAST',VW/2-2,VH-26);
     // Instructions
@@ -1335,6 +1338,7 @@ let gameState='SPLASH';
 function initGame(){
   buildMap();resetPlayer();spawnEnemies();spawnItems();
   pfx=[];stars=[];bombs=[];bullets=[];camX=0;camY=0;
+  simAccumulator=0;
 }
 
 function loop(){
@@ -1351,24 +1355,30 @@ function loop(){
   }
   if(gameState==='GAMEOVER'){
     drawGameOver();
-    if(anyKey()){gameState='SPLASH';splashT=0;speedSelected=false;gameSpeed=1.0;}
+    if(anyKey()){gameState='SPLASH';splashT=0;speedSelected=false;gameSpeed=0.78;}
     ctx.restore();return;
   }
   if(gameState==='WIN'){
     drawWin();
-    if(anyKey()){gameState='SPLASH';splashT=0;speedSelected=false;gameSpeed=1.0;}
+    if(anyKey()){gameState='SPLASH';splashT=0;speedSelected=false;gameSpeed=0.78;}
     ctx.restore();return;
   }
 
-  updatePlayer();
-  updateEnemies();
-  updateItems();
-  updateStars();
-  updateBombs();
-  updateBullets();
-  updatePfx();
-  updateMovPlats();
-  updateCamera();
+  // Time-scale by varying fixed simulation ticks per rendered frame.
+  // This keeps collision stability while making the slow mode truly slower.
+  simAccumulator+=gameSpeed;
+  while(simAccumulator>=1){
+    updatePlayer();
+    updateEnemies();
+    updateItems();
+    updateStars();
+    updateBombs();
+    updateBullets();
+    updatePfx();
+    updateMovPlats();
+    updateCamera();
+    simAccumulator-=1;
+  }
 
   drawMap();
   drawItems();
