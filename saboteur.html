@@ -345,10 +345,6 @@ function updatePlayer(){
     moveEntity(P);return;
   }
 
-  // Crouch is now down-to-crouch and up-to-stand (sticky, not toggle jitter).
-  if(pressed['ArrowDown']&&!P.onLadder)P.crouching=true;
-  if(pressed['ArrowUp']&&P.onGround&&!P.onLadder)P.crouching=false;
-
   // Ladder: remain attached when idle on a ladder, move with up/down,
   // allow left/right to jump off, and allow core attacks while attached.
   const cx=Math.floor((P.x+PW/2)/TS);
@@ -390,6 +386,13 @@ function updatePlayer(){
   }else{
     P.onLadder=false;
   }
+
+  // Sticky crouch controls:
+  // - Press down once to enter crouch mode.
+  // - Press/hold up to force stand-up (fixes getting stuck crouched).
+  // - Ignore crouch while aligned to a ladder tile so ladder intent wins.
+  if(pressed['ArrowDown']&&!onLT)P.crouching=true;
+  if(keys['ArrowUp'])P.crouching=false;
 
   P.vx=0;
   if(!P.crouching){
