@@ -168,10 +168,11 @@ function buildMap(){
 
   function addLadderSegment(x,yTop,yBottom){
     for(let y=yTop;y<=yBottom;y++){
-      // Keep ladder shafts from punching through floor tiles. This makes
-      // ladders end at each floor instead of extending below it.
+      // Carve a traversable shaft through floor slabs only where this ladder
+      // segment exists, so you can pass between floors at ladder crossings.
+      // The segment still ends exactly at yBottom (no spill below its endpoint).
       const t=getT(x,y);
-      if(t===T_EMPTY||t===T_LADDER)setT(x,y,T_LADDER);
+      if(t===T_EMPTY||t===T_LADDER||t===T_SOLID)setT(x,y,T_LADDER);
     }
   }
   const ladderSegments=[
