@@ -12,7 +12,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="keys">← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPACE JUMP | ↓ LADDER (SLOW) | ↑ LADDER (SLOW) | Z/X/C ON LADDER</div>
+<div id="keys">← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPACE JUMP | ↓ LADDER (SLOW) | ↑ LADDER (SLOW) | Z/X/C ATTACK | B BOMB (5s COOLDOWN)</div>
 <script>
 'use strict';
 // ── CANVAS ────────────────────────────────────────────────────────────────────
@@ -59,6 +59,8 @@ const TS=16,MW=120,MH=80;
 const T_EMPTY=0,T_SOLID=1,T_PLAT=2,T_LADDER=3,T_WATER=4,T_SPIKE=5,T_EXIT=6,T_CRATE=7;
 // Gameplay tweak: bombs are now unlimited for constant demolition flow.
 const INFINITE_BOMBS=true;
+// Bomb throws are rate-limited to keep explosive power intentional and readable.
+const BOMB_COOLDOWN_MS=5000;
 
 // ── INPUT ─────────────────────────────────────────────────────────────────────
 const keys={},pressed={};
@@ -286,7 +288,17 @@ function resetPlayer(){
      hasDisk:false,hasKeycard:false,
      shield:0,speedBoost:0,
      invincible:0,attackCooldown:0,attackBox:null,
+     // Timestamp (in ms) when the next bomb throw becomes available.
+     nextBombAtMs:0,
      combo:0,comboTimer:0,crouching:false};
+}
+
+function getBombCooldownRemainingMs(){
+  return Math.max(0,P.nextBombAtMs-performance.now());
+}
+
+function canThrowBombNow(){
+  return getBombCooldownRemainingMs()===0;
 }
 
 function playerHit(dmg){
@@ -417,8 +429,10 @@ function updatePlayer(){
     P.state='punch';P.stateTimer=11;P.attackCooldown=18;pressed['KeyX']=false;SFX.punch();
   }else if(pressed['KeyC']&&P.attackCooldown<=0&&P.stars>0){
     P.state='throw';P.stateTimer=10;P.attackCooldown=22;pressed['KeyC']=false;SFX.star();
-  }else if(pressed['KeyB']&&P.attackCooldown<=0&&(INFINITE_BOMBS||P.bombs>0)){
+  }else if(pressed['KeyB']&&P.attackCooldown<=0&&canThrowBombNow()&&(INFINITE_BOMBS||P.bombs>0)){
     P.state='bomb_throw';P.stateTimer=12;P.attackCooldown=30;pressed['KeyB']=false;
+    // Start cooldown as soon as the throw animation commits.
+    P.nextBombAtMs=performance.now()+BOMB_COOLDOWN_MS;
   }
 
   const prevOnGround=P.onGround;
@@ -1309,6 +1323,11 @@ function drawHUD(){
   ctx.fillStyle='#666';ctx.fillText('BOM',28,VH-8);
   ctx.fillStyle=(INFINITE_BOMBS||P.bombs>0)?'#ff8800':'#333';
   ctx.fillText(INFINITE_BOMBS?'∞':('x'+P.bombs),44,VH-8);
+  const bombCooldownRemainingMs=getBombCooldownRemainingMs();
+  const bombReady=bombCooldownRemainingMs===0;
+  // Inline cooldown status acts as a compact tooltip for bomb availability.
+  ctx.fillStyle=bombReady?'#44ff66':'#ff8844';
+  ctx.fillText(bombReady?'RDY':(bombCooldownRemainingMs/1000).toFixed(1)+'s',52,VH-8);
 
   // Lives
   ctx.fillStyle='#666';ctx.fillText('x',52,VH-18);
