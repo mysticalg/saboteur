@@ -394,15 +394,21 @@ function updatePlayer(){
   if(pressed['ArrowDown']&&!onLT)P.crouching=true;
   if(keys['ArrowUp'])P.crouching=false;
 
+  // Track direct movement intent from player input so animations can stay
+  // stable (idle when no input, crawl when crouch-moving).
+  const moveLeft=keys['ArrowLeft'];
+  const moveRight=keys['ArrowRight'];
+  const hasMoveInput=moveLeft||moveRight;
+
   P.vx=0;
   if(!P.crouching){
-    if(keys['ArrowLeft']){P.vx=-spd;P.dir=-1;}
-    if(keys['ArrowRight']){P.vx=spd;P.dir=1;}
+    if(moveLeft){P.vx=-spd;P.dir=-1;}
+    if(moveRight){P.vx=spd;P.dir=1;}
   }else{
     // Allow slow crawl movement while crouched for tighter control.
     const crouchSpd=spd*0.35;
-    if(keys['ArrowLeft']){P.vx=-crouchSpd;P.dir=-1;}
-    if(keys['ArrowRight']){P.vx=crouchSpd;P.dir=1;}
+    if(moveLeft){P.vx=-crouchSpd;P.dir=-1;}
+    if(moveRight){P.vx=crouchSpd;P.dir=1;}
   }
 
   const wasOnGround=P.onGround;
@@ -423,8 +429,11 @@ function updatePlayer(){
   }
 
   if(!['kick','punch','throw','bomb_throw','hurt','climb'].includes(P.state)){
-    // Use a dead-zone so tiny velocity drift does not trigger running animation.
-    P.state=P.onGround?(P.crouching?'duck':(Math.abs(P.vx)>0.08?'run':'idle')):(P.vy<0?'jump':'fall');
+    // Separate crouch idle vs crouch movement for clearer visuals.
+    // Also require movement input before run animation so the ninja stays still
+    // when the player is not actively moving.
+    const movingHoriz=hasMoveInput&&Math.abs(P.vx)>0.02;
+    P.state=P.onGround?(P.crouching?(movingHoriz?'crawl':'duck'):(movingHoriz?'run':'idle')):(P.vy<0?'jump':'fall');
   }
 
   const prevOnGround=P.onGround;
@@ -918,11 +927,19 @@ function drawNinja(sx,sy,dir,state,inv,t){
   // Shadow
   ctx.fillStyle='rgba(0,0,0,0.25)';ctx.fillRect(1,PH+1,PW-2,2);
 
-  if(state==='duck'){
-    ctx.fillStyle='#111';ctx.fillRect(0,10,12,6);ctx.fillRect(1,14,10,4);
+  if(state==='duck'||state==='crawl'){
+    const crawlStep=state==='crawl'?(fr%4<2?0:1):0;
+    // Crouch idle and crouch-moving are separated to avoid visual flicker.
+    ctx.fillStyle='#111';
+    ctx.fillRect(0,10,12,6);
+    ctx.fillRect(1,14,10,4);
+    // Add small leg offsets only while crawling.
+    ctx.fillRect(1,17-crawlStep,4,2);
+    ctx.fillRect(7,16+crawlStep,4,2);
     ctx.fillStyle='#c8996a';ctx.fillRect(2,7,8,5);
     ctx.fillStyle='#cc1111';ctx.fillRect(2,8,8,3);
     ctx.fillStyle='#fff';ctx.fillRect(6,8,3,1);
+    if(state==='crawl'){ctx.fillStyle='#aa0000';ctx.fillRect(-1,8,2,2);} // scarf trail while moving
     ctx.restore();return;
   }
 
