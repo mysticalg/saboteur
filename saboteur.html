@@ -12,7 +12,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="keys">← → MOVE | SHIFT SPRINT | ↑/SPACE JUMP | ↓ CROUCH (HOLD UP TO STAND) | ↑/↓ LADDER | Z KICK | X PUNCH | C STAR | B BOMB</div>
+<div id="keys">← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPACE JUMP | ↓ CROUCH (HOLD UP TO STAND) | ↑/↓ LADDER | Z KICK | X PUNCH | C STAR | B BOMB</div>
 <script>
 'use strict';
 // ── CANVAS ────────────────────────────────────────────────────────────────────
@@ -206,7 +206,10 @@ function moveEntity(e){
       else if(e.vx<0){e.x=(tx+1)*TS;e.vx=0;}
     }
   }
-  if(!e.onLadder)e.vy=Math.min(e.vy+GRAV,MAXFALL);
+  if(!e.onLadder){
+    const gravMul=e.gravMul||1;
+    e.vy=Math.min(e.vy+GRAV*gravMul,MAXFALL);
+  }
   e.y+=e.vy;
   e.onGround=false;
   tx1=Math.floor(e.x/TS);tx2=Math.floor((e.x+e.w-1)/TS);
@@ -248,6 +251,8 @@ let P={};
 function resetPlayer(){
   P={x:3*TS,y:4*TS-PH-1,w:PW,h:PH,
      vx:0,vy:0,dir:1,
+     // Slightly lower gravity gives a slower, less snappy jump arc.
+     gravMul:0.72,
      onGround:false,onLadder:false,
      state:'idle',stateTimer:0,
      health:6,maxHealth:6,
@@ -318,16 +323,27 @@ function updatePlayer(){
   if(pressed['ArrowDown']&&!P.onLadder)P.crouching=true;
   if(pressed['ArrowUp']&&P.onGround&&!P.onLadder)P.crouching=false;
 
-  // Ladder: remain attached when idle on a ladder, move only when up/down is pressed.
+  // Ladder: remain attached when idle on a ladder, move with up/down,
+  // and allow left/right to jump off the ladder into normal movement.
   const cx=Math.floor((P.x+PW/2)/TS);
   const onLT=isLadder(cx,Math.floor((P.y+2)/TS))||isLadder(cx,Math.floor((P.y+PH/2)/TS));
   const wantsLadderMove=keys['ArrowUp']||keys['ArrowDown'];
+  const ladderJumpOff=keys['ArrowLeft']||keys['ArrowRight'];
   if((P.onLadder&&onLT)||(onLT&&wantsLadderMove)){
     P.onLadder=true;
     P.crouching=false;
+    P.x=cx*TS+(TS-PW)/2;
+    if(ladderJumpOff){
+      P.onLadder=false;
+      P.vx=(keys['ArrowLeft']?-1:1)*(spd*0.95);
+      P.vy=-2.6;
+      P.state='jump';
+      moveEntity(P);
+      clearPressed();
+      return;
+    }
     P.vx=0;
     P.vy=keys['ArrowUp']?-2.2:(keys['ArrowDown']?2.2:0);
-    P.x=cx*TS+(TS-PW)/2;
     P.state='climb';
     moveEntity(P);
     if(!isLadder(cx,Math.floor((P.y+2)/TS))&&!isLadder(cx,Math.floor((P.y+PH/2)/TS)))P.onLadder=false;
@@ -1346,7 +1362,7 @@ function drawSplash(){
 
   // Controls
   ctx.fillStyle='#1a1a1a';ctx.font='4px monospace';
-  ctx.fillText('← → MOVE | SHIFT SPRINT | ↑/SPC JUMP | ↓ CROUCH (UP TO STAND) | ↑/↓ LADDER | Z/X/C/B ATTACKS',VW/2-117,VH-12);
+  ctx.fillText('← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPC JUMP | ↓ CROUCH (UP TO STAND) | Z/X/C/B ATTACKS',VW/2-117,VH-12);
 
   // Press key blink
   if(splashT>90&&(splashT>>4)&1){
