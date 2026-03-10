@@ -60,6 +60,12 @@ const T_EMPTY=0,T_SOLID=1,T_PLAT=2,T_LADDER=3,T_WATER=4,T_SPIKE=5,T_EXIT=6,T_CRA
 // ── INPUT ─────────────────────────────────────────────────────────────────────
 const keys={},pressed={};
 window.addEventListener('keydown',e=>{
+  // Speed selection on splash screen
+  if(gameState==='SPLASH'&&splashT>100){
+    if(e.key==='1'){gameSpeed=0.65;speedSelected=true;e.preventDefault();return;}
+    if(e.key==='2'){gameSpeed=1.0;speedSelected=true;e.preventDefault();return;}
+    if(e.key==='3'){gameSpeed=1.4;speedSelected=true;e.preventDefault();return;}
+  }
   if(!keys[e.code])pressed[e.code]=true;
   keys[e.code]=true;
   ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)&&e.preventDefault();
@@ -76,6 +82,10 @@ function updateShake(){
   if(shakePow>0.2){shakeX=(Math.random()-.5)*shakePow;shakeY=(Math.random()-.5)*shakePow;shakePow*=0.72;}
   else{shakeX=0;shakeY=0;shakePow=0;}
 }
+
+// ── GAME SPEED ────────────────────────────────────────────────────────────────
+let gameSpeed=1.0;
+let speedSelected=false;
 
 // ── MAP ───────────────────────────────────────────────────────────────────────
 const map=new Uint8Array(MW*MH);
@@ -255,7 +265,7 @@ function updatePlayer(){
   if(P.attackCooldown>0)P.attackCooldown--;
   if(P.comboTimer>0){P.comboTimer--;if(P.comboTimer<=0)P.combo=0;}
   P.attackBox=null;
-  const spd=P.speedBoost>0?2.9:1.9;
+  const spd=(P.speedBoost>0?2.9:1.9)*gameSpeed;
 
   if(P.state==='kick'||P.state==='punch'){
     P.stateTimer--;
@@ -305,7 +315,7 @@ function updatePlayer(){
 
   const wasOnGround=P.onGround;
   if((keys['ArrowUp']||keys['Space'])&&P.onGround&&!P.crouching){
-    P.vy=-6.5;P.onGround=false;P.state='jump';SFX.jump();
+    P.vy=-6.5*gameSpeed;P.onGround=false;P.state='jump';SFX.jump();
   }
 
   if(pressed['KeyZ']&&P.attackCooldown<=0){
@@ -525,7 +535,7 @@ function updateEnemies(){
       moveEntity(e);return;
     }
 
-    const sp=e.type==='dog'?1.2:e.type==='heavy'?0.4:0.7;
+    const sp=(e.type==='dog'?1.2:e.type==='heavy'?0.4:0.7)*gameSpeed;
     if(e.state==='patrol'){
       e.vx=e.dir*sp;
       if(e.x<=e.patrolMin)e.dir=1;
@@ -582,7 +592,7 @@ function updateItems(){
 
 function updateMovPlats(){
   movPlats.forEach(mp=>{
-    mp.x+=mp.dir*mp.spd;
+    mp.x+=mp.dir*mp.spd*gameSpeed;
     if(mp.x<=mp.min)mp.dir=1;
     if(mp.x+mp.w>=mp.max)mp.dir=-1;
   });
@@ -1255,6 +1265,28 @@ function drawSplash(){
   });
   ctx.globalAlpha=1;
 
+  // Speed selection menu
+  if(splashT>100){
+    ctx.font='6px monospace';
+    ctx.fillStyle='#ffcc44';ctx.fillText('SELECT GAME SPEED:',VW/2-45,VH-38);
+    ctx.font='5px monospace';
+    // Slow
+    const slowCol=gameSpeed===0.65?'#00ff44':'#aaaaaa';
+    ctx.fillStyle=slowCol;ctx.fillRect(VW/2-75,VH-32,30,8);
+    ctx.fillStyle='#000';ctx.font='5px monospace';ctx.fillText('SLOW',VW/2-73,VH-26);
+    // Normal
+    const normCol=gameSpeed===1.0?'#00ff44':'#aaaaaa';
+    ctx.fillStyle=normCol;ctx.fillRect(VW/2-40,VH-32,30,8);
+    ctx.fillStyle='#000';ctx.fillText('NORMAL',VW/2-38,VH-26);
+    // Fast
+    const fastCol=gameSpeed===1.4?'#00ff44':'#aaaaaa';
+    ctx.fillStyle=fastCol;ctx.fillRect(VW/2-5,VH-32,30,8);
+    ctx.fillStyle='#000';ctx.fillText('FAST',VW/2-2,VH-26);
+    // Instructions
+    ctx.fillStyle='#777';ctx.font='4px monospace';
+    ctx.fillText('Press 1, 2, or 3 to select speed',VW/2-52,VH-18);
+  }
+
   // Controls
   ctx.fillStyle='#1a1a1a';ctx.font='4px monospace';
   ctx.fillText('← → MOVE | ↑/SPC JUMP | ↓ LADDER | Z KICK | X PUNCH | C STAR | B BOMB | SHIFT CROUCH',VW/2-95,VH-12);
@@ -1314,17 +1346,17 @@ function loop(){
 
   if(gameState==='SPLASH'){
     drawSplash();
-    if(splashT>80&&anyKey()){gameState='PLAYING';initGame();splashT=0;AC.resume();}
+    if(splashT>100&&speedSelected&&anyKey()){gameState='PLAYING';initGame();splashT=0;speedSelected=false;AC.resume();}
     ctx.restore();return;
   }
   if(gameState==='GAMEOVER'){
     drawGameOver();
-    if(anyKey()){gameState='PLAYING';initGame();}
+    if(anyKey()){gameState='SPLASH';splashT=0;speedSelected=false;gameSpeed=1.0;}
     ctx.restore();return;
   }
   if(gameState==='WIN'){
     drawWin();
-    if(anyKey()){gameState='SPLASH';splashT=0;}
+    if(anyKey()){gameState='SPLASH';splashT=0;speedSelected=false;gameSpeed=1.0;}
     ctx.restore();return;
   }
 
