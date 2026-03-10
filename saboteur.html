@@ -12,7 +12,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="keys">← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPACE JUMP | ↓ CROUCH | ↑/↓ LADDER (SLOW) | Z/X/C ON LADDER</div>
+<div id="keys">← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPACE JUMP | ↓ LADDER (SLOW) | ↑ LADDER (SLOW) | Z/X/C ON LADDER</div>
 <script>
 'use strict';
 // ── CANVAS ────────────────────────────────────────────────────────────────────
@@ -351,9 +351,8 @@ function updatePlayer(){
   // allow left/right to jump off, and allow core attacks while attached.
   const cx=Math.floor((P.x+PW/2)/TS);
   const onLT=isLadder(cx,Math.floor((P.y+2)/TS))||isLadder(cx,Math.floor((P.y+PH/2)/TS));
-  // Prevent down-to-crouch input on floors from constantly re-grabbing ladders,
-  // which can cause visible x-position snapping and pose flicker near shafts.
-  const wantsLadderMove=keys['ArrowUp']||(keys['ArrowDown']&&(!P.onGround||P.onLadder));
+  // Down/Up are ladder controls only (crouch disabled).
+  const wantsLadderMove=keys['ArrowUp']||keys['ArrowDown'];
   const ladderJumpOff=keys['ArrowLeft']||keys['ArrowRight'];
   if((P.onLadder&&onLT)||(onLT&&wantsLadderMove)){
     P.onLadder=true;
@@ -391,32 +390,22 @@ function updatePlayer(){
     P.onLadder=false;
   }
 
-  // Sticky crouch controls:
-  // - Press down once to enter crouch mode.
-  // - Press/hold up to force stand-up (fixes getting stuck crouched).
-  // - Ignore crouch while aligned to a ladder tile so ladder intent wins.
-  if(pressed['ArrowDown']&&!onLT)P.crouching=true;
-  if(keys['ArrowUp'])P.crouching=false;
+  // Crouch is temporarily disabled per gameplay request.
+  // Keep this explicit reset so no legacy state can leak into animation logic.
+  P.crouching=false;
 
   // Track direct movement intent from player input so animations can stay
-  // stable (idle when no input, crawl when crouch-moving).
+  // stable (idle when no input).
   const moveLeft=keys['ArrowLeft'];
   const moveRight=keys['ArrowRight'];
   const hasMoveInput=moveLeft||moveRight;
 
   P.vx=0;
-  if(!P.crouching){
-    if(moveLeft){P.vx=-spd;P.dir=-1;}
-    if(moveRight){P.vx=spd;P.dir=1;}
-  }else{
-    // Allow slow crawl movement while crouched for tighter control.
-    const crouchSpd=spd*0.35;
-    if(moveLeft){P.vx=-crouchSpd;P.dir=-1;}
-    if(moveRight){P.vx=crouchSpd;P.dir=1;}
-  }
+  if(moveLeft){P.vx=-spd;P.dir=-1;}
+  if(moveRight){P.vx=spd;P.dir=1;}
 
   const wasOnGround=P.onGround;
-  if((keys['ArrowUp']||keys['Space'])&&P.onGround&&!P.crouching){
+  if((keys['ArrowUp']||keys['Space'])&&P.onGround){
     // Tune jump to be ~2x slower and ~half as high as the prior setup.
     const jumpImpulse=(6.5*Math.sqrt(2))*0.155;
     P.vy=-jumpImpulse;P.onGround=false;P.state='jump';SFX.jump();
@@ -437,10 +426,9 @@ function updatePlayer(){
   if(!prevOnGround&&P.onGround)SFX.land();
 
   if(!['kick','punch','throw','bomb_throw','hurt','climb'].includes(P.state)){
-    // Resolve pose from post-physics state to avoid a one-frame stand/fall flash
-    // right when settling onto floors while crouched.
+    // Resolve pose from post-physics state for stable idle/run/jump transitions.
     const movingHoriz=hasMoveInput&&Math.abs(P.vx)>0.02;
-    P.state=P.onGround?(P.crouching?(movingHoriz?'crawl':'duck'):(movingHoriz?'run':'idle')):(P.vy<0?'jump':'fall');
+    P.state=P.onGround?(movingHoriz?'run':'idle'):(P.vy<0?'jump':'fall');
   }
 
   // Hazards
@@ -1504,7 +1492,7 @@ function drawSplash(){
 
   // Controls
   ctx.fillStyle='#1a1a1a';ctx.font='4px monospace';
-  ctx.fillText('← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPC JUMP | ↓ CROUCH | ↑/↓ LADDER SLOW | Z/X/C ATTACK ON LADDER',VW/2-117,VH-12);
+  ctx.fillText('← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPC JUMP | ↑/↓ LADDER SLOW | Z/X/C ATTACK ON LADDER',VW/2-117,VH-12);
 
   // Press key blink
   if(splashT>90&&(splashT>>4)&1){
