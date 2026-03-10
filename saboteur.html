@@ -276,7 +276,8 @@ function playerHit(dmg){
   spawnPfx(P.x+PW/2,P.y+PH/2,7,'#ff6622');
   P.combo=0;P.comboTimer=0;
   if(P.health<=0){P.health=0;killPlayer();return;}
-  P.state='hurt';P.stateTimer=18;P.invincible=70;P.vy=-2.5;
+  // Reduce hurt bounce to 25% of prior knockback for steadier control.
+  P.state='hurt';P.stateTimer=18;P.invincible=70;P.vy=-0.625;
 }
 
 function killPlayer(){
@@ -296,7 +297,8 @@ function updatePlayer(){
   P.attackBox=null;
   const walkSpd=P.speedBoost>0?2.8:2.2;
   const sprinting=!!(keys['ShiftLeft']||keys['ShiftRight']);
-  const spd=sprinting?(walkSpd+1.0):walkSpd;
+  // Global horizontal movement is tuned to half speed.
+  const spd=(sprinting?(walkSpd+1.0):walkSpd)*0.5;
 
   if(P.state==='kick'||P.state==='punch'){
     P.stateTimer--;
