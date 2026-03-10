@@ -256,8 +256,8 @@ let P={};
 function resetPlayer(){
   P={x:3*TS,y:4*TS-PH-1,w:PW,h:PH,
      vx:0,vy:0,dir:1,
-     // Slightly lower gravity gives a slower, less snappy jump arc.
-     gravMul:0.72,
+     // Lower gravity keeps jump/fall motion noticeably slower and floatier.
+     gravMul:0.36,
      onGround:false,onLadder:false,
      state:'idle',stateTimer:0,
      health:6,maxHealth:6,
@@ -361,15 +361,18 @@ function updatePlayer(){
   if(!P.crouching){
     if(keys['ArrowLeft']){P.vx=-spd;P.dir=-1;}
     if(keys['ArrowRight']){P.vx=spd;P.dir=1;}
+  }else{
+    // Allow slow crawl movement while crouched for tighter control.
+    const crouchSpd=spd*0.35;
+    if(keys['ArrowLeft']){P.vx=-crouchSpd;P.dir=-1;}
+    if(keys['ArrowRight']){P.vx=crouchSpd;P.dir=1;}
   }
 
   const wasOnGround=P.onGround;
   if((keys['ArrowUp']||keys['Space'])&&P.onGround&&!P.crouching){
-    // Reduce jump height to half of the current tuned jump while keeping
-    // jump behavior consistent across speed presets.
-    // Slightly higher jump than the previous tuning while preserving the
-    // slower jump feel requested earlier.
-    const jumpImpulse=(6.5*Math.sqrt(2))*0.58;
+    // Make jump arc slower overall but bump peak height slightly.
+    // This keeps jump feel consistent across speed presets.
+    const jumpImpulse=(6.5*Math.sqrt(2))*0.62;
     P.vy=-jumpImpulse;P.onGround=false;P.state='jump';SFX.jump();
   }
 
