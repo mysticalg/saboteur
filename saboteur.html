@@ -318,7 +318,10 @@ function updatePlayer(){
 
   const wasOnGround=P.onGround;
   if((keys['ArrowUp']||keys['Space'])&&P.onGround&&!P.crouching){
-    P.vy=-6.5*gameSpeed;P.onGround=false;P.state='jump';SFX.jump();
+    // Make jumps ~2x higher than before while keeping behavior consistent
+    // across speed presets (jump impulse should not shrink in slow mode).
+    const jumpImpulse=6.5*Math.sqrt(2);
+    P.vy=-jumpImpulse;P.onGround=false;P.state='jump';SFX.jump();
   }
 
   if(pressed['KeyZ']&&P.attackCooldown<=0){
