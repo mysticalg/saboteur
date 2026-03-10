@@ -91,6 +91,22 @@ let speedSelected=false;
 // updates on some render frames so all physics/timers/combat slow down evenly.
 let simAccumulator=0;
 
+// Mission timer: 20 minute countdown, pauses once all keycards are collected.
+let missionTimeLeftMs=20*60*1000;
+let missionTimerRunning=true;
+let missionTimeout=false;
+let lastFrameMs=performance.now();
+
+// Keycard tracking supports multi-keycard setups without hard-coding counts.
+let totalKeycards=0;
+let keycardsFound=0;
+
+// Outside parallax offset: only moves while ninja is moving horizontally.
+let skylineOffsetX=0;
+
+// Lightweight star field for outdoor scenes near the roof.
+let skyStars=[];
+
 // ── MAP ───────────────────────────────────────────────────────────────────────
 const map=new Uint8Array(MW*MH);
 const setT=(x,y,t)=>{if(x>=0&&x<MW&&y>=0&&y<MH)map[y*MW+x]=t;};
@@ -344,8 +360,9 @@ function updatePlayer(){
     P.x=cx*TS+(TS-PW)/2;
     if(ladderJumpOff){
       P.onLadder=false;
-      P.vx=(keys['ArrowLeft']?-1:1)*(spd*0.95);
-      P.vy=-2.6;
+      // Small dismount hop from ladders for tighter control.
+      P.vx=(keys['ArrowLeft']?-1:1)*(spd*0.6);
+      P.vy=-1.4;
       P.state='jump';
       moveEntity(P);
       clearPressed();
@@ -363,8 +380,8 @@ function updatePlayer(){
       moveEntity(P);clearPressed();return;
     }
     P.vx=0;
-    // Half climb/descend speed for finer ladder control.
-    P.vy=keys['ArrowUp']?-1.1:(keys['ArrowDown']?1.1:0);
+    // Slower climb/descend speed for finer ladder control.
+    P.vy=keys['ArrowUp']?-0.7:(keys['ArrowDown']?0.7:0);
     P.state='climb';
     moveEntity(P);
     if(!isLadder(cx,Math.floor((P.y+2)/TS))&&!isLadder(cx,Math.floor((P.y+PH/2)/TS)))P.onLadder=false;
@@ -402,7 +419,8 @@ function updatePlayer(){
   }
 
   if(!['kick','punch','throw','bomb_throw','hurt','climb'].includes(P.state)){
-    P.state=P.onGround?(P.crouching?'duck':(P.vx!==0?'run':'idle')):(P.vy<0?'jump':'fall');
+    // Use a dead-zone so tiny velocity drift does not trigger running animation.
+    P.state=P.onGround?(P.crouching?'duck':(Math.abs(P.vx)>0.08?'run':'idle')):(P.vy<0?'jump':'fall');
   }
 
   const prevOnGround=P.onGround;
@@ -563,6 +581,8 @@ function spawnEnemies(){
 
 function spawnItems(){
   items=[];
+  totalKeycards=0;
+  keycardsFound=0;
   const defs=[
     // Floor 1
     {s:'ammo',x:6,y:13},{s:'health',x:25,y:13},{s:'ammo',x:45,y:13},{s:'health',x:68,y:13},{s:'shield',x:108,y:13},
@@ -587,9 +607,12 @@ function spawnItems(){
     {s:'bomb_item',x:32,y:57},{s:'ammo',x:75,y:57},
     {s:'health',x:42,y:67},{s:'ammo',x:95,y:67},
   ];
-  defs.forEach(d=>items.push({
+  defs.forEach(d=>{
+    if(d.s==='keycard')totalKeycards++;
+    items.push({
     subtype:d.s,x:d.x*TS,y:(d.y+1)*TS-8,w:8,h:8,collected:false,bob:Math.random()*6.28
-  }));
+  });
+  });
 }
 
 function updateEnemies(){
@@ -669,7 +692,13 @@ function updateItems(){
     switch(it.subtype){
       case 'ammo':     P.stars=Math.min(P.stars+6,20);P.score+=100;spawnPfx(it.x+4,it.y+4,8,'#ffff44');SFX.pickup();break;
       case 'health':   P.health=Math.min(P.health+2,P.maxHealth);P.score+=150;spawnPfx(it.x+4,it.y+4,8,'#ff4444');SFX.pickup();break;
-      case 'keycard':  P.hasKeycard=true;P.score+=500;spawnPfx(it.x+4,it.y+4,14,'#44ff44');SFX.keycard();break;
+      case 'keycard':
+        keycardsFound=Math.min(totalKeycards,keycardsFound+1);
+        P.hasKeycard=keycardsFound>=totalKeycards;
+        // Pause countdown once every keycard in the level has been found.
+        if(P.hasKeycard)missionTimerRunning=false;
+        P.score+=500;spawnPfx(it.x+4,it.y+4,14,'#44ff44');SFX.keycard();
+        break;
       case 'disk':     P.hasDisk=true;P.score+=1000;spawnPfx(it.x+4,it.y+4,20,'#00ffcc');SFX.disk();break;
       case 'bomb_item':P.bombs=Math.min(P.bombs+2,8);P.score+=200;spawnPfx(it.x+4,it.y+4,10,'#ff8800');SFX.pickup();break;
       case 'shield':   P.shield=300;P.score+=300;spawnPfx(it.x+4,it.y+4,12,'#4488ff');SFX.pickup();break;
@@ -786,6 +815,7 @@ function drawTile(tx,ty,sx,sy){
 }
 
 function drawMap(){
+  const outsideView=camY<120;
   // Background gradient — deeper = darker/redder (underground)
   const depth=Math.min(1,camY/(MH*TS));
   const r=Math.floor(depth*12),g2=Math.floor(depth*3),b=Math.floor(22-depth*20);
@@ -793,9 +823,9 @@ function drawMap(){
 
   // Distant parallax skyline (only visible near roof / outside areas).
   // It drifts very slowly over time to create a gentle parallax effect.
-  if(camY<120){
+  if(outsideView){
     const a=Math.max(0,1-camY/120);
-    const skyDrift=(tick*0.06)%VW;
+    const skyDrift=((skylineOffsetX%VW)+VW)%VW;
     const bldgs=[[0,155,28,45],[26,142,22,58],[46,138,18,62],[62,150,32,50],[92,128,24,72],
                  [114,143,27,57],[139,133,19,67],[157,148,26,52],[181,143,20,57],
                  [199,126,28,74],[225,138,23,62],[246,146,26,54],[270,152,20,48],[288,143,20,57]];
@@ -808,13 +838,21 @@ function drawMap(){
     }
 
     // Moon only appears while outside.
-    const moonX=VW-54+Math.sin(tick*0.01)*3;
-    const moonY=34+Math.cos(tick*0.008)*2;
+    // Moon stays fixed in place per request.
+    const moonX=VW-54;
+    const moonY=34;
     ctx.fillStyle=`rgba(230,236,255,${a*0.9})`;
     ctx.beginPath();ctx.arc(moonX,moonY,10,0,Math.PI*2);ctx.fill();
     ctx.fillStyle=`rgba(162,170,208,${a*0.7})`;
     ctx.beginPath();ctx.arc(moonX-3,moonY-2,2,0,Math.PI*2);ctx.fill();
     ctx.beginPath();ctx.arc(moonX+3,moonY+2,1.8,0,Math.PI*2);ctx.fill();
+
+    // Simple star field near the top of the outside sky.
+    skyStars.forEach((st,idx)=>{
+      const twinkle=0.55+((idx+tick*0.04)%6)*0.07;
+      ctx.fillStyle=`rgba(235,240,255,${Math.min(1,a*twinkle)})`;
+      ctx.fillRect(st.x,st.y,st.sz,st.sz);
+    });
 
     // Lit windows
     ctx.globalAlpha=a*0.5;
@@ -863,7 +901,8 @@ function drawMap(){
 function drawNinja(sx,sy,dir,state,inv,t){
   if(inv>0&&(t>>1)&1)return;
   ctx.save();ctx.translate(sx+(dir<0?PW:0),sy);if(dir<0)ctx.scale(-1,1);
-  const fr=t>>3;
+  // Slower animation sampling so running cycles feel less rushed.
+  const fr=t>>4;
 
   // Shield aura
   if(P.shield>0){
@@ -944,13 +983,14 @@ function drawNinja(sx,sy,dir,state,inv,t){
 
   // Arms
   ctx.fillStyle='#111';
-  const aSwing=state==='run'?(fr%2?2:-2):0;
+  const runAnimating=state==='run'&&Math.abs(P.vx)>0.08;
+  const aSwing=runAnimating?(fr%2?2:-2):0;
   ctx.fillRect(-2,6+aSwing,3,7);ctx.fillRect(PW-1,6-aSwing,3,7);
   ctx.fillStyle='#c8996a';ctx.fillRect(-2,11+aSwing,3,2);ctx.fillRect(PW-1,11-aSwing,3,2);
 
   // Scarf
   ctx.fillStyle='#cc0000';ctx.fillRect(0,5,12,3);
-  if(state==='run'||state==='jump'){ctx.fillStyle='#aa0000';ctx.fillRect(-2,5,3,2);}
+  if(runAnimating||state==='jump'){ctx.fillStyle='#aa0000';ctx.fillRect(-2,5,3,2);}
 
   // Head
   ctx.fillStyle='#c8996a';ctx.fillRect(2,0,8,6);
@@ -1251,6 +1291,14 @@ function drawHUD(){
   ctx.fillStyle=P.hasDisk?'#00ff88':'#222';ctx.fillText('[DISK]',64,VH-8);
   ctx.fillStyle=P.hasKeycard?'#44ff44':'#222';ctx.fillText('[KEY]',100,VH-8);
 
+  // Mission countdown timer. Stops once all keycards are collected.
+  const totalSec=Math.ceil(Math.max(0,missionTimeLeftMs)/1000);
+  const mm=String(Math.floor(totalSec/60)).padStart(2,'0');
+  const ss=String(totalSec%60).padStart(2,'0');
+  ctx.fillStyle='#666';ctx.fillText('⏱',132,VH-28);
+  ctx.fillStyle=missionTimeLeftMs<=60000?'#ff4422':'#aaffaa';
+  ctx.fillText(mm+':'+ss,140,VH-28);
+
   // Status message
   if(!P.hasDisk){
     ctx.fillStyle='#ffaa00';ctx.fillText('OBJECTIVE: FIND THE DATA DISK — Floor 3',132,VH-18);
@@ -1278,15 +1326,15 @@ function drawHUD(){
   }
 
   // Minimap
-  const mm={x:VW-42,y:VH-27,w:40,h:24};
-  ctx.fillStyle='rgba(0,0,0,0.78)';ctx.fillRect(mm.x,mm.y,mm.w,mm.h);
-  ctx.fillStyle='#222';ctx.fillRect(mm.x,mm.y,mm.w,1);ctx.fillRect(mm.x,mm.y,1,mm.h);
+  const mini={x:VW-42,y:VH-27,w:40,h:24};
+  ctx.fillStyle='rgba(0,0,0,0.78)';ctx.fillRect(mini.x,mini.y,mini.w,mini.h);
+  ctx.fillStyle='#222';ctx.fillRect(mini.x,mini.y,mini.w,1);ctx.fillRect(mini.x,mini.y,1,mini.h);
   ctx.fillStyle='#00ff00';
-  ctx.fillRect(mm.x+Math.floor((P.x/(MW*TS))*mm.w),mm.y+Math.floor((P.y/(MH*TS))*mm.h),2,2);
+  ctx.fillRect(mini.x+Math.floor((P.x/(MW*TS))*mini.w),mini.y+Math.floor((P.y/(MH*TS))*mini.h),2,2);
   ctx.fillStyle='#00ffcc';
-  ctx.fillRect(mm.x+Math.floor(94/MW*mm.w),mm.y+Math.floor(4/MH*mm.h),2,1);
-  if(!P.hasDisk){ctx.fillStyle='#00ccff';ctx.fillRect(mm.x+Math.floor(53/MW*mm.w),mm.y+Math.floor(33/MH*mm.h),2,1);}
-  if(!P.hasKeycard){ctx.fillStyle='#44ff44';ctx.fillRect(mm.x+Math.floor(90/MW*mm.w),mm.y+Math.floor(23/MH*mm.h),2,1);}
+  ctx.fillRect(mini.x+Math.floor(94/MW*mini.w),mini.y+Math.floor(4/MH*mini.h),2,1);
+  if(!P.hasDisk){ctx.fillStyle='#00ccff';ctx.fillRect(mini.x+Math.floor(53/MW*mini.w),mini.y+Math.floor(33/MH*mini.h),2,1);}
+  if(!P.hasKeycard){ctx.fillStyle='#44ff44';ctx.fillRect(mini.x+Math.floor(90/MW*mini.w),mini.y+Math.floor(23/MH*mini.h),2,1);}
 }
 
 // ── VIGNETTE ──────────────────────────────────────────────────────────────────
@@ -1432,7 +1480,8 @@ function drawGameOver(){
   ctx.fillStyle='#cc2200';ctx.fillText('MISSION FAILED',VW/2-56,VH/2-25);
   ctx.fillStyle='#ff4422';ctx.fillText('MISSION FAILED',VW/2-56,VH/2-26);
   ctx.font='6px monospace';
-  ctx.fillStyle='#ff8866';ctx.fillText('KAGE WAS NEUTRALIZED',VW/2-45,VH/2-6);
+  const failMsg=missionTimeout?'MISSION TIME EXPIRED':'KAGE WAS NEUTRALIZED';
+  ctx.fillStyle='#ff8866';ctx.fillText(failMsg,VW/2-(failMsg.length*3),VH/2-6);
   ctx.fillStyle='#ffcc44';ctx.fillText('FINAL SCORE: '+String(P.score).padStart(8,'0'),VW/2-52,VH/2+10);
   if((tick>>4)&1){ctx.fillStyle='#fff';ctx.font='6px monospace';ctx.fillText('PRESS ANY KEY TO RETRY',VW/2-50,VH/2+28);}
 }
@@ -1460,11 +1509,25 @@ function initGame(){
   buildMap();resetPlayer();spawnEnemies();spawnItems();
   pfx=[];stars=[];bombs=[];bullets=[];camX=0;camY=0;
   simAccumulator=0;
+  missionTimeLeftMs=20*60*1000;
+  missionTimerRunning=true;
+  missionTimeout=false;
+  skylineOffsetX=0;
+  lastFrameMs=performance.now();
+  // Generate a small, fixed star field at the top of outside scenes.
+  skyStars=Array.from({length:30},()=>({
+    x:Math.floor(Math.random()*VW),
+    y:Math.floor(Math.random()*58),
+    sz:Math.random()<0.25?2:1
+  }));
 }
 
 function loop(){
   requestAnimationFrame(loop);
   tick++;
+  const now=performance.now();
+  const dt=Math.min(100,Math.max(0,now-lastFrameMs));
+  lastFrameMs=now;
   updateShake();
   ctx.save();
   if(shakePow>0.2)ctx.translate(Math.round(shakeX),Math.round(shakeY));
@@ -1488,6 +1551,19 @@ function loop(){
   // Keep player physics at render cadence so jump arc/height stays identical
   // regardless of speed preset, while world simulation still time-scales.
   updatePlayer();
+
+  // Move outside skyline only while player is actively moving left/right.
+  if(Math.abs(P.vx)>0.08)skylineOffsetX-=P.vx*0.55;
+
+  // Real-time mission countdown. Freeze once all keycards are found.
+  if(missionTimerRunning){
+    missionTimeLeftMs=Math.max(0,missionTimeLeftMs-dt);
+    if(missionTimeLeftMs<=0){
+      missionTimeout=true;
+      gameState='GAMEOVER';
+      missionTimerRunning=false;
+    }
+  }
 
   // Time-scale non-player systems by varying fixed simulation ticks per frame.
   simAccumulator+=gameSpeed;
