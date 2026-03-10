@@ -349,7 +349,9 @@ function updatePlayer(){
   // allow left/right to jump off, and allow core attacks while attached.
   const cx=Math.floor((P.x+PW/2)/TS);
   const onLT=isLadder(cx,Math.floor((P.y+2)/TS))||isLadder(cx,Math.floor((P.y+PH/2)/TS));
-  const wantsLadderMove=keys['ArrowUp']||keys['ArrowDown'];
+  // Prevent down-to-crouch input on floors from constantly re-grabbing ladders,
+  // which can cause visible x-position snapping and pose flicker near shafts.
+  const wantsLadderMove=keys['ArrowUp']||(keys['ArrowDown']&&(!P.onGround||P.onLadder));
   const ladderJumpOff=keys['ArrowLeft']||keys['ArrowRight'];
   if((P.onLadder&&onLT)||(onLT&&wantsLadderMove)){
     P.onLadder=true;
@@ -428,17 +430,16 @@ function updatePlayer(){
     P.state='bomb_throw';P.stateTimer=12;P.attackCooldown=30;pressed['KeyB']=false;
   }
 
-  if(!['kick','punch','throw','bomb_throw','hurt','climb'].includes(P.state)){
-    // Separate crouch idle vs crouch movement for clearer visuals.
-    // Also require movement input before run animation so the ninja stays still
-    // when the player is not actively moving.
-    const movingHoriz=hasMoveInput&&Math.abs(P.vx)>0.02;
-    P.state=P.onGround?(P.crouching?(movingHoriz?'crawl':'duck'):(movingHoriz?'run':'idle')):(P.vy<0?'jump':'fall');
-  }
-
   const prevOnGround=P.onGround;
   moveEntity(P);
   if(!prevOnGround&&P.onGround)SFX.land();
+
+  if(!['kick','punch','throw','bomb_throw','hurt','climb'].includes(P.state)){
+    // Resolve pose from post-physics state to avoid a one-frame stand/fall flash
+    // right when settling onto floors while crouched.
+    const movingHoriz=hasMoveInput&&Math.abs(P.vx)>0.02;
+    P.state=P.onGround?(P.crouching?(movingHoriz?'crawl':'duck'):(movingHoriz?'run':'idle')):(P.vy<0?'jump':'fall');
+  }
 
   // Hazards
   const ft=getT(Math.floor((P.x+PW/2)/TS),Math.floor((P.y+PH)/TS));
