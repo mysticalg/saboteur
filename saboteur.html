@@ -39,7 +39,8 @@ function snd(freq,type,dur,vol,freqEnd){
 }
 const SFX={
   jump:  ()=>snd(200,'sine',0.15,0.12,420),
-  land:  ()=>snd(80,'square',0.06,0.1,40),
+  // Walking/footstep-style landing audio intentionally disabled per UX request.
+  land:  ()=>{},
   kick:  ()=>snd(160,'sawtooth',0.1,0.22,55),
   punch: ()=>snd(190,'square',0.09,0.2,65),
   star:  ()=>snd(750,'sawtooth',0.14,0.12,180),
@@ -790,25 +791,45 @@ function drawMap(){
   const r=Math.floor(depth*12),g2=Math.floor(depth*3),b=Math.floor(22-depth*20);
   ctx.fillStyle=`rgb(${r},${g2},${b})`;ctx.fillRect(0,0,VW,VH);
 
-  // Distant parallax city (only visible near roof)
+  // Distant parallax skyline (only visible near roof / outside areas).
+  // It drifts very slowly over time to create a gentle parallax effect.
   if(camY<120){
     const a=Math.max(0,1-camY/120);
+    const skyDrift=(tick*0.06)%VW;
     const bldgs=[[0,155,28,45],[26,142,22,58],[46,138,18,62],[62,150,32,50],[92,128,24,72],
                  [114,143,27,57],[139,133,19,67],[157,148,26,52],[181,143,20,57],
                  [199,126,28,74],[225,138,23,62],[246,146,26,54],[270,152,20,48],[288,143,20,57]];
     ctx.fillStyle=`rgba(6,6,6,${a})`;
-    bldgs.forEach(([bx,by,bw,bh])=>ctx.fillRect(bx,by,bw,bh));
+
+    // Draw two passes (wrapped) so drift stays seamless across the screen.
+    for(let pass=0;pass<2;pass++){
+      const wrapX=(pass*VW)-Math.floor(skyDrift);
+      bldgs.forEach(([bx,by,bw,bh])=>ctx.fillRect(bx+wrapX,by,bw,bh));
+    }
+
+    // Moon only appears while outside.
+    const moonX=VW-54+Math.sin(tick*0.01)*3;
+    const moonY=34+Math.cos(tick*0.008)*2;
+    ctx.fillStyle=`rgba(230,236,255,${a*0.9})`;
+    ctx.beginPath();ctx.arc(moonX,moonY,10,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=`rgba(162,170,208,${a*0.7})`;
+    ctx.beginPath();ctx.arc(moonX-3,moonY-2,2,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(moonX+3,moonY+2,1.8,0,Math.PI*2);ctx.fill();
+
     // Lit windows
     ctx.globalAlpha=a*0.5;
-    bldgs.forEach(([bx,by,bw,bh])=>{
-      for(let wy=by+5;wy<VH-2;wy+=7)for(let wx=bx+3;wx<bx+bw-3;wx+=5){
-        // Keep skyline windows steady to avoid flicker/distraction.
-        if(((wx*13+wy*7)%10)<6){
-          ctx.fillStyle=(wx+wy)%3===0?'#ffe088':'#88bbff';
-          ctx.fillRect(wx,wy,3,4);
+    for(let pass=0;pass<2;pass++){
+      const wrapX=(pass*VW)-Math.floor(skyDrift);
+      bldgs.forEach(([bx,by,bw,bh])=>{
+        for(let wy=by+5;wy<VH-2;wy+=7)for(let wx=bx+3;wx<bx+bw-3;wx+=5){
+          // Keep skyline windows steady to avoid flicker/distraction.
+          if(((wx*13+wy*7)%10)<6){
+            ctx.fillStyle=(wx+wy)%3===0?'#ffe088':'#88bbff';
+            ctx.fillRect(wx+wrapX,wy,3,4);
+          }
         }
-      }
-    });
+      });
+    }
     ctx.globalAlpha=1;
   }
 
