@@ -167,7 +167,12 @@ function buildMap(){
     null,[[0,MW]],null); // water floor
 
   function addLadderSegment(x,yTop,yBottom){
-    for(let y=yTop;y<=yBottom;y++)setT(x,y,T_LADDER);
+    for(let y=yTop;y<=yBottom;y++){
+      // Keep ladder shafts from punching through floor tiles. This makes
+      // ladders end at each floor instead of extending below it.
+      const t=getT(x,y);
+      if(t===T_EMPTY||t===T_LADDER)setT(x,y,T_LADDER);
+    }
   }
   const ladderSegments=[
     // Roof access + upper floors
@@ -362,7 +367,9 @@ function updatePlayer(){
   if((keys['ArrowUp']||keys['Space'])&&P.onGround&&!P.crouching){
     // Reduce jump height to half of the current tuned jump while keeping
     // jump behavior consistent across speed presets.
-    const jumpImpulse=(6.5*Math.sqrt(2))*0.5;
+    // Slightly higher jump than the previous tuning while preserving the
+    // slower jump feel requested earlier.
+    const jumpImpulse=(6.5*Math.sqrt(2))*0.58;
     P.vy=-jumpImpulse;P.onGround=false;P.state='jump';SFX.jump();
   }
 
