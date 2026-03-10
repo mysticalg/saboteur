@@ -1367,11 +1367,13 @@ function loop(){
     ctx.restore();return;
   }
 
-  // Time-scale by varying fixed simulation ticks per rendered frame.
-  // This keeps collision stability while making the slow mode truly slower.
+  // Keep player physics at render cadence so jump arc/height stays identical
+  // regardless of speed preset, while world simulation still time-scales.
+  updatePlayer();
+
+  // Time-scale non-player systems by varying fixed simulation ticks per frame.
   simAccumulator+=gameSpeed;
   while(simAccumulator>=1){
-    updatePlayer();
     updateEnemies();
     updateItems();
     updateStars();
@@ -1379,9 +1381,11 @@ function loop(){
     updateBullets();
     updatePfx();
     updateMovPlats();
-    updateCamera();
     simAccumulator-=1;
   }
+
+  // Camera should always follow the player smoothly at display frame rate.
+  updateCamera();
 
   drawMap();
   drawItems();
