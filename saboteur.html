@@ -12,7 +12,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="keys">← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPACE JUMP | ↓ CROUCH | ↑/↓ LADDER (SLOW) | Z/X/C ON LADDER</div>
+<div id="keys">← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPACE JUMP | ↓ LADDER (SLOW) | ↑ LADDER (SLOW) | Z/X/C ON LADDER</div>
 <script>
 'use strict';
 // ── CANVAS ────────────────────────────────────────────────────────────────────
@@ -57,6 +57,8 @@ const SFX={
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 const TS=16,MW=120,MH=80;
 const T_EMPTY=0,T_SOLID=1,T_PLAT=2,T_LADDER=3,T_WATER=4,T_SPIKE=5,T_EXIT=6,T_CRATE=7;
+// Gameplay tweak: bombs are now unlimited for constant demolition flow.
+const INFINITE_BOMBS=true;
 
 // ── INPUT ─────────────────────────────────────────────────────────────────────
 const keys={},pressed={};
@@ -280,7 +282,7 @@ function resetPlayer(){
      onGround:false,onLadder:false,
      state:'idle',stateTimer:0,
      health:6,maxHealth:6,
-     stars:10,bombs:3,lives:3,score:0,
+     stars:10,bombs:INFINITE_BOMBS?Infinity:3,lives:3,score:0,
      hasDisk:false,hasKeycard:false,
      shield:0,speedBoost:0,
      invincible:0,attackCooldown:0,attackBox:null,
@@ -345,14 +347,11 @@ function updatePlayer(){
     moveEntity(P);return;
   }
 
-  // Crouch is now down-to-crouch and up-to-stand (sticky, not toggle jitter).
-  if(pressed['ArrowDown']&&!P.onLadder)P.crouching=true;
-  if(pressed['ArrowUp']&&P.onGround&&!P.onLadder)P.crouching=false;
-
   // Ladder: remain attached when idle on a ladder, move with up/down,
   // allow left/right to jump off, and allow core attacks while attached.
   const cx=Math.floor((P.x+PW/2)/TS);
   const onLT=isLadder(cx,Math.floor((P.y+2)/TS))||isLadder(cx,Math.floor((P.y+PH/2)/TS));
+  // Down/Up are ladder controls only (crouch disabled).
   const wantsLadderMove=keys['ArrowUp']||keys['ArrowDown'];
   const ladderJumpOff=keys['ArrowLeft']||keys['ArrowRight'];
   if((P.onLadder&&onLT)||(onLT&&wantsLadderMove)){
@@ -391,19 +390,22 @@ function updatePlayer(){
     P.onLadder=false;
   }
 
+  // Crouch is temporarily disabled per gameplay request.
+  // Keep this explicit reset so no legacy state can leak into animation logic.
+  P.crouching=false;
+
+  // Track direct movement intent from player input so animations can stay
+  // stable (idle when no input).
+  const moveLeft=keys['ArrowLeft'];
+  const moveRight=keys['ArrowRight'];
+  const hasMoveInput=moveLeft||moveRight;
+
   P.vx=0;
-  if(!P.crouching){
-    if(keys['ArrowLeft']){P.vx=-spd;P.dir=-1;}
-    if(keys['ArrowRight']){P.vx=spd;P.dir=1;}
-  }else{
-    // Allow slow crawl movement while crouched for tighter control.
-    const crouchSpd=spd*0.35;
-    if(keys['ArrowLeft']){P.vx=-crouchSpd;P.dir=-1;}
-    if(keys['ArrowRight']){P.vx=crouchSpd;P.dir=1;}
-  }
+  if(moveLeft){P.vx=-spd;P.dir=-1;}
+  if(moveRight){P.vx=spd;P.dir=1;}
 
   const wasOnGround=P.onGround;
-  if((keys['ArrowUp']||keys['Space'])&&P.onGround&&!P.crouching){
+  if((keys['ArrowUp']||keys['Space'])&&P.onGround){
     // Tune jump to be ~2x slower and ~half as high as the prior setup.
     const jumpImpulse=(6.5*Math.sqrt(2))*0.155;
     P.vy=-jumpImpulse;P.onGround=false;P.state='jump';SFX.jump();
@@ -415,18 +417,19 @@ function updatePlayer(){
     P.state='punch';P.stateTimer=11;P.attackCooldown=18;pressed['KeyX']=false;SFX.punch();
   }else if(pressed['KeyC']&&P.attackCooldown<=0&&P.stars>0){
     P.state='throw';P.stateTimer=10;P.attackCooldown=22;pressed['KeyC']=false;SFX.star();
-  }else if(pressed['KeyB']&&P.attackCooldown<=0&&P.bombs>0){
+  }else if(pressed['KeyB']&&P.attackCooldown<=0&&(INFINITE_BOMBS||P.bombs>0)){
     P.state='bomb_throw';P.stateTimer=12;P.attackCooldown=30;pressed['KeyB']=false;
-  }
-
-  if(!['kick','punch','throw','bomb_throw','hurt','climb'].includes(P.state)){
-    // Use a dead-zone so tiny velocity drift does not trigger running animation.
-    P.state=P.onGround?(P.crouching?'duck':(Math.abs(P.vx)>0.08?'run':'idle')):(P.vy<0?'jump':'fall');
   }
 
   const prevOnGround=P.onGround;
   moveEntity(P);
   if(!prevOnGround&&P.onGround)SFX.land();
+
+  if(!['kick','punch','throw','bomb_throw','hurt','climb'].includes(P.state)){
+    // Resolve pose from post-physics state for stable idle/run/jump transitions.
+    const movingHoriz=hasMoveInput&&Math.abs(P.vx)>0.02;
+    P.state=P.onGround?(movingHoriz?'run':'idle'):(P.vy<0?'jump':'fall');
+  }
 
   // Hazards
   const ft=getT(Math.floor((P.x+PW/2)/TS),Math.floor((P.y+PH)/TS));
@@ -448,7 +451,8 @@ function spawnStar(){
   stars.push({x:P.x+(P.dir>0?PW+2:-4),y:P.y+PH*0.35,vx:P.dir*6.5,vy:0,life:65});
 }
 function spawnBomb(){
-  P.bombs--;
+  // Infinite bombs mode keeps bomb count untouched for uninterrupted play.
+  if(!INFINITE_BOMBS)P.bombs--;
   bombs.push({x:P.x+(P.dir>0?PW:0),y:P.y+4,vx:P.dir*3.2,vy:-4.5,life:130});
 }
 function spawnBullet(x,y,vx){
@@ -469,6 +473,27 @@ function updateStars(){
       }
     }
     if(hit)stars.splice(i,1);
+  }
+}
+
+
+function isBombDestructibleTile(tx,ty){
+  const t=getT(tx,ty);
+  // Keep outer map shell intact to avoid void leaks while allowing interior
+  // floor/brick destruction exactly where bomb gameplay expects it.
+  if(tx<=0||tx>=MW-1||ty<=0||ty>=MH-1)return false;
+  return t===T_SOLID||t===T_CRATE;
+}
+
+function destroyBombTiles(cx,cy,tileRadius){
+  for(let by2=-tileRadius;by2<=tileRadius;by2++)for(let bx2=-tileRadius;bx2<=tileRadius;bx2++){
+    if(bx2*bx2+by2*by2>tileRadius*tileRadius+1)continue;
+    const tx=cx+bx2,ty=cy+by2;
+    if(isBombDestructibleTile(tx,ty)){
+      const tile=getT(tx,ty);
+      setT(tx,ty,T_EMPTY);
+      spawnPfx(tx*TS+8,ty*TS+8,tile===T_CRATE?8:5,tile===T_CRATE?'#8b5a2b':'#a05a3a');
+    }
   }
 }
 
@@ -493,11 +518,8 @@ function updateBombs(){
       }
       const pdx=(P.x+PW/2)-b.x,pdy=(P.y+PH/2)-b.y;
       if(Math.sqrt(pdx*pdx+pdy*pdy)<rad*0.55)playerHit(2);
-      // Break crates nearby
-      for(let by2=-2;by2<=2;by2++)for(let bx2=-2;bx2<=2;bx2++){
-        const tx=Math.floor(b.x/TS)+bx2,ty=Math.floor(b.y/TS)+by2;
-        if(getT(tx,ty)===T_CRATE){setT(tx,ty,T_EMPTY);spawnPfx(tx*TS+8,ty*TS+8,8,'#8b5a2b');}
-      }
+      // Blast now destroys nearby brick/floor tiles in addition to crates.
+      destroyBombTiles(Math.floor(b.x/TS),Math.floor(b.y/TS),2);
       bombs.splice(i,1);
     }
   }
@@ -701,7 +723,7 @@ function updateItems(){
         P.score+=500;spawnPfx(it.x+4,it.y+4,14,'#44ff44');SFX.keycard();
         break;
       case 'disk':     P.hasDisk=true;P.score+=1000;spawnPfx(it.x+4,it.y+4,20,'#00ffcc');SFX.disk();break;
-      case 'bomb_item':P.bombs=Math.min(P.bombs+2,8);P.score+=200;spawnPfx(it.x+4,it.y+4,10,'#ff8800');SFX.pickup();break;
+      case 'bomb_item':if(!INFINITE_BOMBS)P.bombs=Math.min(P.bombs+2,8);P.score+=200;spawnPfx(it.x+4,it.y+4,10,'#ff8800');SFX.pickup();break;
       case 'shield':   P.shield=300;P.score+=300;spawnPfx(it.x+4,it.y+4,12,'#4488ff');SFX.pickup();break;
       case 'speed':    P.speedBoost=400;P.score+=200;spawnPfx(it.x+4,it.y+4,12,'#88ffff');SFX.pickup();break;
       case 'extralife':P.lives++;P.score+=1000;spawnPfx(it.x+4,it.y+4,20,'#ff88ff');addShake(3);SFX.disk();break;
@@ -915,11 +937,19 @@ function drawNinja(sx,sy,dir,state,inv,t){
   // Shadow
   ctx.fillStyle='rgba(0,0,0,0.25)';ctx.fillRect(1,PH+1,PW-2,2);
 
-  if(state==='duck'){
-    ctx.fillStyle='#111';ctx.fillRect(0,10,12,6);ctx.fillRect(1,14,10,4);
+  if(state==='duck'||state==='crawl'){
+    const crawlStep=state==='crawl'?(fr%4<2?0:1):0;
+    // Crouch idle and crouch-moving are separated to avoid visual flicker.
+    ctx.fillStyle='#111';
+    ctx.fillRect(0,10,12,6);
+    ctx.fillRect(1,14,10,4);
+    // Add small leg offsets only while crawling.
+    ctx.fillRect(1,17-crawlStep,4,2);
+    ctx.fillRect(7,16+crawlStep,4,2);
     ctx.fillStyle='#c8996a';ctx.fillRect(2,7,8,5);
     ctx.fillStyle='#cc1111';ctx.fillRect(2,8,8,3);
     ctx.fillStyle='#fff';ctx.fillRect(6,8,3,1);
+    if(state==='crawl'){ctx.fillStyle='#aa0000';ctx.fillRect(-1,8,2,2);} // scarf trail while moving
     ctx.restore();return;
   }
 
@@ -1277,8 +1307,8 @@ function drawHUD(){
 
   // Bombs
   ctx.fillStyle='#666';ctx.fillText('BOM',28,VH-8);
-  ctx.fillStyle=P.bombs>0?'#ff8800':'#333';
-  ctx.fillText('x'+P.bombs,44,VH-8);
+  ctx.fillStyle=(INFINITE_BOMBS||P.bombs>0)?'#ff8800':'#333';
+  ctx.fillText(INFINITE_BOMBS?'∞':('x'+P.bombs),44,VH-8);
 
   // Lives
   ctx.fillStyle='#666';ctx.fillText('x',52,VH-18);
@@ -1462,7 +1492,7 @@ function drawSplash(){
 
   // Controls
   ctx.fillStyle='#1a1a1a';ctx.font='4px monospace';
-  ctx.fillText('← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPC JUMP | ↓ CROUCH | ↑/↓ LADDER SLOW | Z/X/C ATTACK ON LADDER',VW/2-117,VH-12);
+  ctx.fillText('← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPC JUMP | ↑/↓ LADDER SLOW | Z/X/C ATTACK ON LADDER',VW/2-117,VH-12);
 
   // Press key blink
   if(splashT>90&&(splashT>>4)&1){
