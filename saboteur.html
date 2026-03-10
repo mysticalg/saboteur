@@ -101,8 +101,9 @@ let lastFrameMs=performance.now();
 let totalKeycards=0;
 let keycardsFound=0;
 
-// Outside parallax offset: only moves while ninja is moving horizontally.
+// Outside parallax offset: camera-driven (only while screen actually scrolls).
 let skylineOffsetX=0;
+let prevCamX=0;
 
 // Lightweight star field for outdoor scenes near the roof.
 let skyStars=[];
@@ -822,7 +823,7 @@ function drawMap(){
   ctx.fillStyle=`rgb(${r},${g2},${b})`;ctx.fillRect(0,0,VW,VH);
 
   // Distant parallax skyline (only visible near roof / outside areas).
-  // It drifts very slowly over time to create a gentle parallax effect.
+  // Movement is camera-driven for true screen-scroll-linked parallax.
   if(outsideView){
     const a=Math.max(0,1-camY/120);
     const skyDrift=((skylineOffsetX%VW)+VW)%VW;
@@ -1513,6 +1514,7 @@ function initGame(){
   missionTimerRunning=true;
   missionTimeout=false;
   skylineOffsetX=0;
+  prevCamX=camX;
   lastFrameMs=performance.now();
   // Generate a small, fixed star field at the top of outside scenes.
   skyStars=Array.from({length:30},()=>({
@@ -1552,8 +1554,8 @@ function loop(){
   // regardless of speed preset, while world simulation still time-scales.
   updatePlayer();
 
-  // Move outside skyline only while player is actively moving left/right.
-  if(Math.abs(P.vx)>0.08)skylineOffsetX-=P.vx*0.55;
+  // Skyline parallax is updated after camera movement so it reacts only
+  // when the screen actually scrolls, not just when player velocity changes.
 
   // Real-time mission countdown. Freeze once all keycards are found.
   if(missionTimerRunning){
@@ -1580,6 +1582,10 @@ function loop(){
 
   // Camera should always follow the player smoothly at display frame rate.
   updateCamera();
+  // Buildings move opposite camera travel at quarter speed for subtle parallax.
+  const camDeltaX=camX-prevCamX;
+  skylineOffsetX+=camDeltaX*0.25;
+  prevCamX=camX;
 
   drawMap();
   drawItems();
