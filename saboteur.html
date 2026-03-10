@@ -12,7 +12,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="keys">← → MOVE | ↑/SPACE JUMP | ↓ LADDER | Z KICK | X PUNCH | C STAR | B BOMB | SHIFT CROUCH</div>
+<div id="keys">← → MOVE | SHIFT SPRINT | ↑/SPACE JUMP | ↓ CROUCH (HOLD UP TO STAND) | ↑/↓ LADDER | Z KICK | X PUNCH | C STAR | B BOMB</div>
 <script>
 'use strict';
 // ── CANVAS ────────────────────────────────────────────────────────────────────
@@ -181,12 +181,16 @@ function buildMap(){
 
 // ── PHYSICS ───────────────────────────────────────────────────────────────────
 const GRAV=0.38,MAXFALL=8;
+function isBlockingTile(e,tx,ty){
+  // Enemies treat ladder shafts as solid so they avoid ladder holes and stay on floors.
+  return isSolid(tx,ty)||(e!==P&&isLadder(tx,ty));
+}
 function moveEntity(e){
   e.x+=e.vx;
   let tx1=Math.floor(e.x/TS),tx2=Math.floor((e.x+e.w-1)/TS);
   let ty1=Math.floor(e.y/TS),ty2=Math.floor((e.y+e.h-1)/TS);
   for(let ty=ty1;ty<=ty2;ty++)for(let tx=tx1;tx<=tx2;tx++){
-    if(isSolid(tx,ty)){
+    if(isBlockingTile(e,tx,ty)){
       if(e.vx>0){e.x=tx*TS-e.w;e.vx=0;}
       else if(e.vx<0){e.x=(tx+1)*TS;e.vx=0;}
     }
@@ -197,7 +201,7 @@ function moveEntity(e){
   tx1=Math.floor(e.x/TS);tx2=Math.floor((e.x+e.w-1)/TS);
   ty1=Math.floor(e.y/TS);ty2=Math.floor((e.y+e.h-1)/TS);
   for(let tx=tx1;tx<=tx2;tx++)for(let ty=ty1;ty<=ty2;ty++){
-    if(isSolid(tx,ty)){
+    if(isBlockingTile(e,tx,ty)){
       if(e.vy>0){e.y=ty*TS-e.h;e.vy=0;e.onGround=true;}
       else if(e.vy<0){e.y=(ty+1)*TS;e.vy=0;}
     }
@@ -268,7 +272,9 @@ function updatePlayer(){
   if(P.attackCooldown>0)P.attackCooldown--;
   if(P.comboTimer>0){P.comboTimer--;if(P.comboTimer<=0)P.combo=0;}
   P.attackBox=null;
-  const spd=(P.speedBoost>0?2.9:1.9)*gameSpeed;
+  const walkSpd=P.speedBoost>0?2.8:2.2;
+  const sprinting=!!(keys['ShiftLeft']||keys['ShiftRight']);
+  const spd=sprinting?(walkSpd+1.0):walkSpd;
 
   if(P.state==='kick'||P.state==='punch'){
     P.stateTimer--;
@@ -297,18 +303,27 @@ function updatePlayer(){
     moveEntity(P);return;
   }
 
-  P.crouching=!!(keys['ShiftLeft']||keys['ShiftRight']);
+  // Crouch is now down-to-crouch and up-to-stand (sticky, not toggle jitter).
+  if(pressed['ArrowDown']&&!P.onLadder)P.crouching=true;
+  if(pressed['ArrowUp']&&P.onGround&&!P.onLadder)P.crouching=false;
 
-  // Ladder
+  // Ladder: remain attached when idle on a ladder, move only when up/down is pressed.
   const cx=Math.floor((P.x+PW/2)/TS);
   const onLT=isLadder(cx,Math.floor((P.y+2)/TS))||isLadder(cx,Math.floor((P.y+PH/2)/TS));
-  if(onLT&&(keys['ArrowUp']||keys['ArrowDown'])){
-    P.onLadder=true;P.vx=0;P.vy=keys['ArrowUp']?-2:2;
-    P.x=cx*TS+(TS-PW)/2;P.state='climb';
+  const wantsLadderMove=keys['ArrowUp']||keys['ArrowDown'];
+  if((P.onLadder&&onLT)||(onLT&&wantsLadderMove)){
+    P.onLadder=true;
+    P.crouching=false;
+    P.vx=0;
+    P.vy=keys['ArrowUp']?-2.2:(keys['ArrowDown']?2.2:0);
+    P.x=cx*TS+(TS-PW)/2;
+    P.state='climb';
     moveEntity(P);
-    if(!isLadder(cx,Math.floor((P.y+2)/TS))&&P.vy<0)P.onLadder=false;
+    if(!isLadder(cx,Math.floor((P.y+2)/TS))&&!isLadder(cx,Math.floor((P.y+PH/2)/TS)))P.onLadder=false;
     clearPressed();return;
-  }else{P.onLadder=false;}
+  }else{
+    P.onLadder=false;
+  }
 
   P.vx=0;
   if(!P.crouching){
@@ -720,7 +735,8 @@ function drawMap(){
     ctx.globalAlpha=a*0.5;
     bldgs.forEach(([bx,by,bw,bh])=>{
       for(let wy=by+5;wy<VH-2;wy+=7)for(let wx=bx+3;wx<bx+bw-3;wx+=5){
-        if((tick*0.01+wx+wy)%1<0.65){
+        // Keep skyline windows steady to avoid flicker/distraction.
+        if(((wx*13+wy*7)%10)<6){
           ctx.fillStyle=(wx+wy)%3===0?'#ffe088':'#88bbff';
           ctx.fillRect(wx,wy,3,4);
         }
@@ -1295,7 +1311,7 @@ function drawSplash(){
 
   // Controls
   ctx.fillStyle='#1a1a1a';ctx.font='4px monospace';
-  ctx.fillText('← → MOVE | ↑/SPC JUMP | ↓ LADDER | Z KICK | X PUNCH | C STAR | B BOMB | SHIFT CROUCH',VW/2-95,VH-12);
+  ctx.fillText('← → MOVE | SHIFT SPRINT | ↑/SPC JUMP | ↓ CROUCH (UP TO STAND) | ↑/↓ LADDER | Z/X/C/B ATTACKS',VW/2-117,VH-12);
 
   // Press key blink
   if(splashT>90&&(splashT>>4)&1){
