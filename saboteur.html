@@ -108,9 +108,8 @@ function buildMap(){
   // ROOF row 4 — helipad on right
   fillR(0,4,MW,1,T_SOLID);
   fillR(90,4,14,1,T_EXIT);
-  [12,30,50,70,90,108].forEach(x=>{
-    setT(x,4,T_LADDER);setT(x,3,T_LADDER);setT(x,2,T_LADDER);setT(x,1,T_LADDER);
-  });
+  // Ladder shafts are intentionally segmented so each one spans only
+  // 2-3 floors maximum instead of running through the whole building.
 
   // Helper to build a floor slab
   function floor(y0,y1,walls,plats,spikes,water,crates){
@@ -126,7 +125,6 @@ function buildMap(){
     spikes&&spikes.forEach(([sx,sw])=>fillR(sx,y1-1,sw,1,T_SPIKE));
     water&&water.forEach(([wx2,ww])=>fillR(wx2,y1-1,ww,1,T_WATER));
     crates&&crates.forEach(([cx])=>setT(cx,y1-1,T_CRATE));
-    [12,30,50,70,90,108].forEach(x=>{for(let y=y0;y<=y1;y++)setT(x,y,T_LADDER);});
   }
 
   // Floor 1 rows 5-14
@@ -167,6 +165,19 @@ function buildMap(){
   floor(65,74,[40,80],
     [[4,70,9],[15,72,7],[42,69,9],[55,72,8],[65,70,9],[82,72,8],[95,69,10],[112,72,5]],
     null,[[0,MW]],null); // water floor
+
+  function addLadderSegment(x,yTop,yBottom){
+    for(let y=yTop;y<=yBottom;y++)setT(x,y,T_LADDER);
+  }
+  const ladderSegments=[
+    // Roof access + upper floors
+    [12,1,24],[50,3,24],[90,1,24],
+    // Mid floors (3-floor and 2-floor shafts)
+    [30,15,44],[70,25,54],[108,25,54],
+    // Lower floors
+    [12,45,74],[50,45,74],[90,55,74]
+  ];
+  ladderSegments.forEach(([x,yTop,yBottom])=>addLadderSegment(x,yTop,yBottom));
 
   // Moving platforms
   movPlats=[
@@ -333,9 +344,9 @@ function updatePlayer(){
 
   const wasOnGround=P.onGround;
   if((keys['ArrowUp']||keys['Space'])&&P.onGround&&!P.crouching){
-    // Make jumps ~2x higher than before while keeping behavior consistent
-    // across speed presets (jump impulse should not shrink in slow mode).
-    const jumpImpulse=6.5*Math.sqrt(2);
+    // Reduce jump height to half of the current tuned jump while keeping
+    // jump behavior consistent across speed presets.
+    const jumpImpulse=(6.5*Math.sqrt(2))*0.5;
     P.vy=-jumpImpulse;P.onGround=false;P.state='jump';SFX.jump();
   }
 
@@ -455,8 +466,12 @@ function hurtEnemy(e,dmg,dir){
   spawnPfx(e.x+e.w/2,e.y+e.h/2,6,'#ff4422');
   e.state='hurt';e.stateTimer=18;e.vx=(dir||1)*2;e.vy=-2;
   if(e.health<=0){
-    e.state='dead';P.score+=150+(P.combo>3?P.combo*25:0);
-    spawnPfx(e.x+e.w/2,e.y+e.h/2,22,'#ff8800');addShake(3);
+    e.state='dead';
+    // Keep defeated enemies in-world as corpses with blood pools.
+    e.corpseSettled=false;e.bloodSize=5+Math.random()*6;
+    e.vx=(dir||1)*1.2;e.vy=-1.4;
+    P.score+=150+(P.combo>3?P.combo*25:0);
+    spawnPfx(e.x+e.w/2,e.y+e.h/2,22,'#ff2200');addShake(3);
   }
 }
 
@@ -478,25 +493,29 @@ function spawnEnemies(){
       type:'guard',x:x*TS,y:(def.y+1)*TS-20,w:12,h:20,
       vx:0.6,vy:0,dir:1,state:'patrol',stateTimer:0,
       health:3,maxHealth:3,patrolMin:(x-pr)*TS,patrolMax:(x+pr)*TS,
-      onGround:false,alertTimer:0,shootCooldown:0
+      onGround:false,onLadder:false,alertTimer:0,shootCooldown:0,
+      corpseSettled:false,bloodSize:0
     }));
     def.d.forEach(([x,pr])=>enemies.push({
       type:'dog',x:x*TS,y:(def.y+1)*TS-12,w:14,h:12,
       vx:0.9,vy:0,dir:1,state:'patrol',stateTimer:0,
       health:1,maxHealth:1,patrolMin:(x-pr)*TS,patrolMax:(x+pr)*TS,
-      onGround:false,alertTimer:0
+      onGround:false,onLadder:false,alertTimer:0,
+      corpseSettled:false,bloodSize:0
     }));
     def.s.forEach(([x])=>enemies.push({
       type:'sniper',x:x*TS,y:(def.y+1)*TS-22,w:10,h:22,
       vx:0,vy:0,dir:-1,state:'patrol',stateTimer:0,
       health:2,maxHealth:2,patrolMin:x*TS,patrolMax:x*TS,
-      onGround:false,alertTimer:0,shootCooldown:50+Math.random()*40
+      onGround:false,onLadder:false,alertTimer:0,shootCooldown:50+Math.random()*40,
+      corpseSettled:false,bloodSize:0
     }));
     def.h.forEach(([x])=>enemies.push({
       type:'heavy',x:x*TS,y:(def.y+1)*TS-26,w:16,h:26,
       vx:0.35,vy:0,dir:1,state:'patrol',stateTimer:0,
       health:6,maxHealth:6,patrolMin:(x-5)*TS,patrolMax:(x+5)*TS,
-      onGround:false,alertTimer:0,shootCooldown:0
+      onGround:false,onLadder:false,alertTimer:0,shootCooldown:0,
+      corpseSettled:false,bloodSize:0
     }));
   });
 }
@@ -535,7 +554,15 @@ function spawnItems(){
 function updateEnemies(){
   const CHASE_D=130,ATK_D=14;
   enemies.forEach(e=>{
-    if(e.state==='dead')return;
+    if(e.state==='dead'){
+      // Let corpses settle on nearby ground once, then persist (no respawn).
+      if(!e.corpseSettled){
+        e.vx*=0.8;
+        moveEntity(e);
+        if(e.onGround||Math.abs(e.vy)<0.05)e.corpseSettled=true;
+      }
+      return;
+    }
     if(e.state==='hurt'){
       e.stateTimer--;if(e.stateTimer<=0)e.state=e.health>0?'patrol':'dead';
       moveEntity(e);return;
@@ -1095,9 +1122,17 @@ function drawPfx(){
 
 function drawEnemies(){
   enemies.forEach(e=>{
-    if(e.state==='dead')return;
     const sx=Math.round(e.x-camX),sy=Math.round(e.y-camY);
     if(sx<-40||sx>VW+40||sy<-40||sy>VH+40)return;
+    if(e.state==='dead'){
+      // Blood pool + collapsed body heap for persistent defeated enemies.
+      const poolW=Math.max(6,e.bloodSize||8),poolH=Math.max(2,Math.round(poolW*0.35));
+      ctx.fillStyle='rgba(80,0,0,0.55)';ctx.fillRect(sx-1,sy+e.h-poolH+1,poolW,poolH);
+      ctx.fillStyle='rgba(160,0,0,0.5)';ctx.fillRect(sx+1,sy+e.h-poolH+2,Math.max(2,poolW-5),Math.max(1,poolH-1));
+      ctx.fillStyle='#2a2a2a';ctx.fillRect(sx,sy+e.h-4,Math.max(7,e.w-2),3);
+      ctx.fillStyle='#3d3d3d';ctx.fillRect(sx+2,sy+e.h-7,Math.max(4,e.w-6),3);
+      return;
+    }
     if(e.type==='guard')drawGuard(sx,sy,e.dir,e.state,e.health,e.maxHealth,tick);
     else if(e.type==='dog')drawDog(sx,sy,e.dir,e.state,tick);
     else if(e.type==='heavy')drawHeavy(sx,sy,e.dir,e.state,e.health,e.maxHealth,tick);
