@@ -257,8 +257,8 @@ let P={};
 function resetPlayer(){
   P={x:3*TS,y:4*TS-PH-1,w:PW,h:PH,
      vx:0,vy:0,dir:1,
-     // Lower gravity keeps jump/fall motion noticeably slower and floatier.
-     gravMul:0.36,
+     // Heavily reduced gravity to make jumps much slower in time.
+     gravMul:0.045,
      onGround:false,onLadder:false,
      state:'idle',stateTimer:0,
      health:6,maxHealth:6,
@@ -371,9 +371,8 @@ function updatePlayer(){
 
   const wasOnGround=P.onGround;
   if((keys['ArrowUp']||keys['Space'])&&P.onGround&&!P.crouching){
-    // Make jump arc slower overall but bump peak height slightly.
-    // This keeps jump feel consistent across speed presets.
-    const jumpImpulse=(6.5*Math.sqrt(2))*0.62;
+    // Tune jump to be ~2x slower and ~half as high as the prior setup.
+    const jumpImpulse=(6.5*Math.sqrt(2))*0.155;
     P.vy=-jumpImpulse;P.onGround=false;P.state='jump';SFX.jump();
   }
 
@@ -1152,12 +1151,18 @@ function drawEnemies(){
     const sx=Math.round(e.x-camX),sy=Math.round(e.y-camY);
     if(sx<-40||sx>VW+40||sy<-40||sy>VH+40)return;
     if(e.state==='dead'){
-      // Blood pool + collapsed body heap for persistent defeated enemies.
-      const poolW=Math.max(6,e.bloodSize||8),poolH=Math.max(2,Math.round(poolW*0.35));
-      ctx.fillStyle='rgba(80,0,0,0.55)';ctx.fillRect(sx-1,sy+e.h-poolH+1,poolW,poolH);
-      ctx.fillStyle='rgba(160,0,0,0.5)';ctx.fillRect(sx+1,sy+e.h-poolH+2,Math.max(2,poolW-5),Math.max(1,poolH-1));
-      ctx.fillStyle='#2a2a2a';ctx.fillRect(sx,sy+e.h-4,Math.max(7,e.w-2),3);
-      ctx.fillStyle='#3d3d3d';ctx.fillRect(sx+2,sy+e.h-7,Math.max(4,e.w-6),3);
+      // Render defeated enemies as solid red heaps with a white skull marker.
+      const poolW=Math.max(8,e.bloodSize||9),poolH=Math.max(3,Math.round(poolW*0.42));
+      ctx.fillStyle='#7a0000';ctx.fillRect(sx-1,sy+e.h-poolH,poolW,poolH+1);
+      ctx.fillStyle='#b30000';ctx.fillRect(sx+1,sy+e.h-poolH+1,Math.max(4,poolW-4),Math.max(2,poolH-1));
+      // White skull icon on top of the red heap.
+      const skullX=sx+Math.floor(poolW*0.45),skullY=sy+e.h-poolH-6;
+      ctx.fillStyle='#ffffff';
+      ctx.fillRect(skullX,skullY,4,3);
+      ctx.fillRect(skullX+1,skullY+3,2,2);
+      ctx.fillStyle='#000000';
+      ctx.fillRect(skullX+1,skullY+1,1,1);
+      ctx.fillRect(skullX+2,skullY+1,1,1);
       return;
     }
     if(e.type==='guard')drawGuard(sx,sy,e.dir,e.state,e.health,e.maxHealth,tick);
