@@ -1,0 +1,42 @@
+name: Deploy static site to GitHub Pages
+
+on:
+  # Manual trigger for quick verification from Actions tab.
+  workflow_dispatch:
+  # Deploy whenever website files are updated on main.
+  push:
+    branches: ["main"]
+    paths:
+      - "*.html"
+      - ".github/workflows/deploy-pages.yml"
+
+# Required permissions for GitHub Pages deployment.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Ensure only one deployment runs at a time.
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Upload full repo as static artifact (includes HTML/CSS/JS assets).
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
