@@ -12,7 +12,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="keys">← → MOVE | ↑/SPACE JUMP | ↓ LADDER | Z KICK | X PUNCH | C STAR | B BOMB | SHIFT CROUCH</div>
+<div id="keys">← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPACE JUMP | ↓ CROUCH | ↑/↓ LADDER (SLOW) | Z/X/C ON LADDER</div>
 <script>
 'use strict';
 // ── CANVAS ────────────────────────────────────────────────────────────────────
@@ -62,9 +62,9 @@ const keys={},pressed={};
 window.addEventListener('keydown',e=>{
   // Speed selection on splash screen
   if(gameState==='SPLASH'&&splashT>100){
-    if(e.key==='1'){gameSpeed=0.65;speedSelected=true;e.preventDefault();return;}
-    if(e.key==='2'){gameSpeed=1.0;speedSelected=true;e.preventDefault();return;}
-    if(e.key==='3'){gameSpeed=1.4;speedSelected=true;e.preventDefault();return;}
+    if(e.key==='1'){gameSpeed=0.42;speedSelected=true;e.preventDefault();return;}
+    if(e.key==='2'){gameSpeed=0.78;speedSelected=true;e.preventDefault();return;}
+    if(e.key==='3'){gameSpeed=1.0;speedSelected=true;e.preventDefault();return;}
   }
   if(!keys[e.code])pressed[e.code]=true;
   keys[e.code]=true;
@@ -84,8 +84,11 @@ function updateShake(){
 }
 
 // ── GAME SPEED ────────────────────────────────────────────────────────────────
-let gameSpeed=1.0;
+let gameSpeed=0.78;
 let speedSelected=false;
+// Fixed-step pacing accumulator. Values below 1.0 intentionally skip simulation
+// updates on some render frames so all physics/timers/combat slow down evenly.
+let simAccumulator=0;
 
 // ── MAP ───────────────────────────────────────────────────────────────────────
 const map=new Uint8Array(MW*MH);
@@ -105,9 +108,8 @@ function buildMap(){
   // ROOF row 4 — helipad on right
   fillR(0,4,MW,1,T_SOLID);
   fillR(90,4,14,1,T_EXIT);
-  [12,30,50,70,90,108].forEach(x=>{
-    setT(x,4,T_LADDER);setT(x,3,T_LADDER);setT(x,2,T_LADDER);setT(x,1,T_LADDER);
-  });
+  // Ladder shafts are intentionally segmented so each one spans only
+  // 2-3 floors maximum instead of running through the whole building.
 
   // Helper to build a floor slab
   function floor(y0,y1,walls,plats,spikes,water,crates){
@@ -123,7 +125,6 @@ function buildMap(){
     spikes&&spikes.forEach(([sx,sw])=>fillR(sx,y1-1,sw,1,T_SPIKE));
     water&&water.forEach(([wx2,ww])=>fillR(wx2,y1-1,ww,1,T_WATER));
     crates&&crates.forEach(([cx])=>setT(cx,y1-1,T_CRATE));
-    [12,30,50,70,90,108].forEach(x=>{for(let y=y0;y<=y1;y++)setT(x,y,T_LADDER);});
   }
 
   // Floor 1 rows 5-14
@@ -165,6 +166,25 @@ function buildMap(){
     [[4,70,9],[15,72,7],[42,69,9],[55,72,8],[65,70,9],[82,72,8],[95,69,10],[112,72,5]],
     null,[[0,MW]],null); // water floor
 
+  function addLadderSegment(x,yTop,yBottom){
+    for(let y=yTop;y<=yBottom;y++){
+      // Carve a traversable shaft through floor slabs only where this ladder
+      // segment exists, so you can pass between floors at ladder crossings.
+      // The segment still ends exactly at yBottom (no spill below its endpoint).
+      const t=getT(x,y);
+      if(t===T_EMPTY||t===T_LADDER||t===T_SOLID)setT(x,y,T_LADDER);
+    }
+  }
+  const ladderSegments=[
+    // Roof access + upper floors
+    [12,1,24],[50,3,24],[90,1,24],
+    // Mid floors (3-floor and 2-floor shafts)
+    [30,15,44],[70,25,54],[108,25,54],
+    // Lower floors
+    [12,45,74],[50,45,74],[90,55,74]
+  ];
+  ladderSegments.forEach(([x,yTop,yBottom])=>addLadderSegment(x,yTop,yBottom));
+
   // Moving platforms
   movPlats=[
     {x:48*TS,y:11*TS,w:4*TS,h:4,dir:1,spd:0.7,min:38*TS,max:58*TS},
@@ -178,23 +198,30 @@ function buildMap(){
 
 // ── PHYSICS ───────────────────────────────────────────────────────────────────
 const GRAV=0.38,MAXFALL=8;
+function isBlockingTile(e,tx,ty){
+  // Enemies treat ladder shafts as solid so they avoid ladder holes and stay on floors.
+  return isSolid(tx,ty)||(e!==P&&isLadder(tx,ty));
+}
 function moveEntity(e){
   e.x+=e.vx;
   let tx1=Math.floor(e.x/TS),tx2=Math.floor((e.x+e.w-1)/TS);
   let ty1=Math.floor(e.y/TS),ty2=Math.floor((e.y+e.h-1)/TS);
   for(let ty=ty1;ty<=ty2;ty++)for(let tx=tx1;tx<=tx2;tx++){
-    if(isSolid(tx,ty)){
+    if(isBlockingTile(e,tx,ty)){
       if(e.vx>0){e.x=tx*TS-e.w;e.vx=0;}
       else if(e.vx<0){e.x=(tx+1)*TS;e.vx=0;}
     }
   }
-  if(!e.onLadder)e.vy=Math.min(e.vy+GRAV,MAXFALL);
+  if(!e.onLadder){
+    const gravMul=e.gravMul||1;
+    e.vy=Math.min(e.vy+GRAV*gravMul,MAXFALL);
+  }
   e.y+=e.vy;
   e.onGround=false;
   tx1=Math.floor(e.x/TS);tx2=Math.floor((e.x+e.w-1)/TS);
   ty1=Math.floor(e.y/TS);ty2=Math.floor((e.y+e.h-1)/TS);
   for(let tx=tx1;tx<=tx2;tx++)for(let ty=ty1;ty<=ty2;ty++){
-    if(isSolid(tx,ty)){
+    if(isBlockingTile(e,tx,ty)){
       if(e.vy>0){e.y=ty*TS-e.h;e.vy=0;e.onGround=true;}
       else if(e.vy<0){e.y=(ty+1)*TS;e.vy=0;}
     }
@@ -230,6 +257,8 @@ let P={};
 function resetPlayer(){
   P={x:3*TS,y:4*TS-PH-1,w:PW,h:PH,
      vx:0,vy:0,dir:1,
+     // Heavily reduced gravity to make jumps much slower in time.
+     gravMul:0.045,
      onGround:false,onLadder:false,
      state:'idle',stateTimer:0,
      health:6,maxHealth:6,
@@ -247,7 +276,8 @@ function playerHit(dmg){
   spawnPfx(P.x+PW/2,P.y+PH/2,7,'#ff6622');
   P.combo=0;P.comboTimer=0;
   if(P.health<=0){P.health=0;killPlayer();return;}
-  P.state='hurt';P.stateTimer=18;P.invincible=70;P.vy=-2.5;
+  // Reduce hurt bounce to 25% of prior knockback for steadier control.
+  P.state='hurt';P.stateTimer=18;P.invincible=70;P.vy=-0.625;
 }
 
 function killPlayer(){
@@ -265,7 +295,10 @@ function updatePlayer(){
   if(P.attackCooldown>0)P.attackCooldown--;
   if(P.comboTimer>0){P.comboTimer--;if(P.comboTimer<=0)P.combo=0;}
   P.attackBox=null;
-  const spd=(P.speedBoost>0?2.9:1.9)*gameSpeed;
+  const walkSpd=P.speedBoost>0?2.8:2.2;
+  const sprinting=!!(keys['ShiftLeft']||keys['ShiftRight']);
+  // Global horizontal movement is tuned to half speed.
+  const spd=(sprinting?(walkSpd+1.0):walkSpd)*0.5;
 
   if(P.state==='kick'||P.state==='punch'){
     P.stateTimer--;
@@ -273,19 +306,19 @@ function updatePlayer(){
       const bw=24,bh=10;
       P.attackBox={x:P.dir>0?P.x+PW:P.x-bw,y:P.y+(P.state==='kick'?PH*0.55:PH*0.2),w:bw,h:bh};
     }
-    if(P.stateTimer<=0)P.state=P.onGround?'idle':'fall';
+    if(P.stateTimer<=0)P.state=P.onLadder?'climb':(P.onGround?'idle':'fall');
     moveEntity(P);return;
   }
   if(P.state==='throw'){
     P.stateTimer--;
     if(P.stateTimer===3)spawnStar();
-    if(P.stateTimer<=0)P.state=P.onGround?'idle':'fall';
+    if(P.stateTimer<=0)P.state=P.onLadder?'climb':(P.onGround?'idle':'fall');
     moveEntity(P);return;
   }
   if(P.state==='bomb_throw'){
     P.stateTimer--;
     if(P.stateTimer===3)spawnBomb();
-    if(P.stateTimer<=0)P.state=P.onGround?'idle':'fall';
+    if(P.stateTimer<=0)P.state=P.onLadder?'climb':(P.onGround?'idle':'fall');
     moveEntity(P);return;
   }
   if(P.state==='hurt'){
@@ -294,28 +327,67 @@ function updatePlayer(){
     moveEntity(P);return;
   }
 
-  P.crouching=!!(keys['ShiftLeft']||keys['ShiftRight']);
+  // Crouch is now down-to-crouch and up-to-stand (sticky, not toggle jitter).
+  if(pressed['ArrowDown']&&!P.onLadder)P.crouching=true;
+  if(pressed['ArrowUp']&&P.onGround&&!P.onLadder)P.crouching=false;
 
-  // Ladder
+  // Ladder: remain attached when idle on a ladder, move with up/down,
+  // allow left/right to jump off, and allow core attacks while attached.
   const cx=Math.floor((P.x+PW/2)/TS);
   const onLT=isLadder(cx,Math.floor((P.y+2)/TS))||isLadder(cx,Math.floor((P.y+PH/2)/TS));
-  if(onLT&&(keys['ArrowUp']||keys['ArrowDown'])){
-    P.onLadder=true;P.vx=0;P.vy=keys['ArrowUp']?-2:2;
-    P.x=cx*TS+(TS-PW)/2;P.state='climb';
+  const wantsLadderMove=keys['ArrowUp']||keys['ArrowDown'];
+  const ladderJumpOff=keys['ArrowLeft']||keys['ArrowRight'];
+  if((P.onLadder&&onLT)||(onLT&&wantsLadderMove)){
+    P.onLadder=true;
+    P.crouching=false;
+    P.x=cx*TS+(TS-PW)/2;
+    if(ladderJumpOff){
+      P.onLadder=false;
+      P.vx=(keys['ArrowLeft']?-1:1)*(spd*0.95);
+      P.vy=-2.6;
+      P.state='jump';
+      moveEntity(P);
+      clearPressed();
+      return;
+    }
+    // Attacks are available while hanging on ladders.
+    if(pressed['KeyZ']&&P.attackCooldown<=0){
+      P.vx=0;P.vy=0;P.state='kick';P.stateTimer=13;P.attackCooldown=22;pressed['KeyZ']=false;SFX.kick();
+      moveEntity(P);clearPressed();return;
+    }else if(pressed['KeyX']&&P.attackCooldown<=0){
+      P.vx=0;P.vy=0;P.state='punch';P.stateTimer=11;P.attackCooldown=18;pressed['KeyX']=false;SFX.punch();
+      moveEntity(P);clearPressed();return;
+    }else if(pressed['KeyC']&&P.attackCooldown<=0&&P.stars>0){
+      P.vx=0;P.vy=0;P.state='throw';P.stateTimer=10;P.attackCooldown=22;pressed['KeyC']=false;SFX.star();
+      moveEntity(P);clearPressed();return;
+    }
+    P.vx=0;
+    // Half climb/descend speed for finer ladder control.
+    P.vy=keys['ArrowUp']?-1.1:(keys['ArrowDown']?1.1:0);
+    P.state='climb';
     moveEntity(P);
-    if(!isLadder(cx,Math.floor((P.y+2)/TS))&&P.vy<0)P.onLadder=false;
+    if(!isLadder(cx,Math.floor((P.y+2)/TS))&&!isLadder(cx,Math.floor((P.y+PH/2)/TS)))P.onLadder=false;
     clearPressed();return;
-  }else{P.onLadder=false;}
+  }else{
+    P.onLadder=false;
+  }
 
   P.vx=0;
   if(!P.crouching){
     if(keys['ArrowLeft']){P.vx=-spd;P.dir=-1;}
     if(keys['ArrowRight']){P.vx=spd;P.dir=1;}
+  }else{
+    // Allow slow crawl movement while crouched for tighter control.
+    const crouchSpd=spd*0.35;
+    if(keys['ArrowLeft']){P.vx=-crouchSpd;P.dir=-1;}
+    if(keys['ArrowRight']){P.vx=crouchSpd;P.dir=1;}
   }
 
   const wasOnGround=P.onGround;
   if((keys['ArrowUp']||keys['Space'])&&P.onGround&&!P.crouching){
-    P.vy=-6.5*gameSpeed;P.onGround=false;P.state='jump';SFX.jump();
+    // Tune jump to be ~2x slower and ~half as high as the prior setup.
+    const jumpImpulse=(6.5*Math.sqrt(2))*0.155;
+    P.vy=-jumpImpulse;P.onGround=false;P.state='jump';SFX.jump();
   }
 
   if(pressed['KeyZ']&&P.attackCooldown<=0){
@@ -434,8 +506,12 @@ function hurtEnemy(e,dmg,dir){
   spawnPfx(e.x+e.w/2,e.y+e.h/2,6,'#ff4422');
   e.state='hurt';e.stateTimer=18;e.vx=(dir||1)*2;e.vy=-2;
   if(e.health<=0){
-    e.state='dead';P.score+=150+(P.combo>3?P.combo*25:0);
-    spawnPfx(e.x+e.w/2,e.y+e.h/2,22,'#ff8800');addShake(3);
+    e.state='dead';
+    // Keep defeated enemies in-world as corpses with blood pools.
+    e.corpseSettled=false;e.bloodSize=5+Math.random()*6;
+    e.vx=(dir||1)*1.2;e.vy=-1.4;
+    P.score+=150+(P.combo>3?P.combo*25:0);
+    spawnPfx(e.x+e.w/2,e.y+e.h/2,22,'#ff2200');addShake(3);
   }
 }
 
@@ -457,25 +533,29 @@ function spawnEnemies(){
       type:'guard',x:x*TS,y:(def.y+1)*TS-20,w:12,h:20,
       vx:0.6,vy:0,dir:1,state:'patrol',stateTimer:0,
       health:3,maxHealth:3,patrolMin:(x-pr)*TS,patrolMax:(x+pr)*TS,
-      onGround:false,alertTimer:0,shootCooldown:0
+      onGround:false,onLadder:false,alertTimer:0,shootCooldown:0,
+      corpseSettled:false,bloodSize:0
     }));
     def.d.forEach(([x,pr])=>enemies.push({
       type:'dog',x:x*TS,y:(def.y+1)*TS-12,w:14,h:12,
       vx:0.9,vy:0,dir:1,state:'patrol',stateTimer:0,
       health:1,maxHealth:1,patrolMin:(x-pr)*TS,patrolMax:(x+pr)*TS,
-      onGround:false,alertTimer:0
+      onGround:false,onLadder:false,alertTimer:0,
+      corpseSettled:false,bloodSize:0
     }));
     def.s.forEach(([x])=>enemies.push({
       type:'sniper',x:x*TS,y:(def.y+1)*TS-22,w:10,h:22,
       vx:0,vy:0,dir:-1,state:'patrol',stateTimer:0,
       health:2,maxHealth:2,patrolMin:x*TS,patrolMax:x*TS,
-      onGround:false,alertTimer:0,shootCooldown:50+Math.random()*40
+      onGround:false,onLadder:false,alertTimer:0,shootCooldown:50+Math.random()*40,
+      corpseSettled:false,bloodSize:0
     }));
     def.h.forEach(([x])=>enemies.push({
       type:'heavy',x:x*TS,y:(def.y+1)*TS-26,w:16,h:26,
       vx:0.35,vy:0,dir:1,state:'patrol',stateTimer:0,
       health:6,maxHealth:6,patrolMin:(x-5)*TS,patrolMax:(x+5)*TS,
-      onGround:false,alertTimer:0,shootCooldown:0
+      onGround:false,onLadder:false,alertTimer:0,shootCooldown:0,
+      corpseSettled:false,bloodSize:0
     }));
   });
 }
@@ -514,7 +594,15 @@ function spawnItems(){
 function updateEnemies(){
   const CHASE_D=130,ATK_D=14;
   enemies.forEach(e=>{
-    if(e.state==='dead')return;
+    if(e.state==='dead'){
+      // Let corpses settle on nearby ground once, then persist (no respawn).
+      if(!e.corpseSettled){
+        e.vx*=0.8;
+        moveEntity(e);
+        if(e.onGround||Math.abs(e.vy)<0.05)e.corpseSettled=true;
+      }
+      return;
+    }
     if(e.state==='hurt'){
       e.stateTimer--;if(e.stateTimer<=0)e.state=e.health>0?'patrol':'dead';
       moveEntity(e);return;
@@ -714,7 +802,8 @@ function drawMap(){
     ctx.globalAlpha=a*0.5;
     bldgs.forEach(([bx,by,bw,bh])=>{
       for(let wy=by+5;wy<VH-2;wy+=7)for(let wx=bx+3;wx<bx+bw-3;wx+=5){
-        if((tick*0.01+wx+wy)%1<0.65){
+        // Keep skyline windows steady to avoid flicker/distraction.
+        if(((wx*13+wy*7)%10)<6){
           ctx.fillStyle=(wx+wy)%3===0?'#ffe088':'#88bbff';
           ctx.fillRect(wx,wy,3,4);
         }
@@ -1073,9 +1162,23 @@ function drawPfx(){
 
 function drawEnemies(){
   enemies.forEach(e=>{
-    if(e.state==='dead')return;
     const sx=Math.round(e.x-camX),sy=Math.round(e.y-camY);
     if(sx<-40||sx>VW+40||sy<-40||sy>VH+40)return;
+    if(e.state==='dead'){
+      // Render defeated enemies as solid red heaps with a white skull marker.
+      const poolW=Math.max(8,e.bloodSize||9),poolH=Math.max(3,Math.round(poolW*0.42));
+      ctx.fillStyle='#7a0000';ctx.fillRect(sx-1,sy+e.h-poolH,poolW,poolH+1);
+      ctx.fillStyle='#b30000';ctx.fillRect(sx+1,sy+e.h-poolH+1,Math.max(4,poolW-4),Math.max(2,poolH-1));
+      // White skull icon on top of the red heap.
+      const skullX=sx+Math.floor(poolW*0.45),skullY=sy+e.h-poolH-6;
+      ctx.fillStyle='#ffffff';
+      ctx.fillRect(skullX,skullY,4,3);
+      ctx.fillRect(skullX+1,skullY+3,2,2);
+      ctx.fillStyle='#000000';
+      ctx.fillRect(skullX+1,skullY+1,1,1);
+      ctx.fillRect(skullX+2,skullY+1,1,1);
+      return;
+    }
     if(e.type==='guard')drawGuard(sx,sy,e.dir,e.state,e.health,e.maxHealth,tick);
     else if(e.type==='dog')drawDog(sx,sy,e.dir,e.state,tick);
     else if(e.type==='heavy')drawHeavy(sx,sy,e.dir,e.state,e.health,e.maxHealth,tick);
@@ -1271,15 +1374,15 @@ function drawSplash(){
     ctx.fillStyle='#ffcc44';ctx.fillText('SELECT GAME SPEED:',VW/2-45,VH-38);
     ctx.font='5px monospace';
     // Slow
-    const slowCol=gameSpeed===0.65?'#00ff44':'#aaaaaa';
+    const slowCol=gameSpeed===0.42?'#00ff44':'#aaaaaa';
     ctx.fillStyle=slowCol;ctx.fillRect(VW/2-75,VH-32,30,8);
     ctx.fillStyle='#000';ctx.font='5px monospace';ctx.fillText('SLOW',VW/2-73,VH-26);
     // Normal
-    const normCol=gameSpeed===1.0?'#00ff44':'#aaaaaa';
+    const normCol=gameSpeed===0.78?'#00ff44':'#aaaaaa';
     ctx.fillStyle=normCol;ctx.fillRect(VW/2-40,VH-32,30,8);
     ctx.fillStyle='#000';ctx.fillText('NORMAL',VW/2-38,VH-26);
     // Fast
-    const fastCol=gameSpeed===1.4?'#00ff44':'#aaaaaa';
+    const fastCol=gameSpeed===1.0?'#00ff44':'#aaaaaa';
     ctx.fillStyle=fastCol;ctx.fillRect(VW/2-5,VH-32,30,8);
     ctx.fillStyle='#000';ctx.fillText('FAST',VW/2-2,VH-26);
     // Instructions
@@ -1289,7 +1392,7 @@ function drawSplash(){
 
   // Controls
   ctx.fillStyle='#1a1a1a';ctx.font='4px monospace';
-  ctx.fillText('← → MOVE | ↑/SPC JUMP | ↓ LADDER | Z KICK | X PUNCH | C STAR | B BOMB | SHIFT CROUCH',VW/2-95,VH-12);
+  ctx.fillText('← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPC JUMP | ↓ CROUCH | ↑/↓ LADDER SLOW | Z/X/C ATTACK ON LADDER',VW/2-117,VH-12);
 
   // Press key blink
   if(splashT>90&&(splashT>>4)&1){
@@ -1335,6 +1438,7 @@ let gameState='SPLASH';
 function initGame(){
   buildMap();resetPlayer();spawnEnemies();spawnItems();
   pfx=[];stars=[];bombs=[];bullets=[];camX=0;camY=0;
+  simAccumulator=0;
 }
 
 function loop(){
@@ -1351,23 +1455,33 @@ function loop(){
   }
   if(gameState==='GAMEOVER'){
     drawGameOver();
-    if(anyKey()){gameState='SPLASH';splashT=0;speedSelected=false;gameSpeed=1.0;}
+    if(anyKey()){gameState='SPLASH';splashT=0;speedSelected=false;gameSpeed=0.78;}
     ctx.restore();return;
   }
   if(gameState==='WIN'){
     drawWin();
-    if(anyKey()){gameState='SPLASH';splashT=0;speedSelected=false;gameSpeed=1.0;}
+    if(anyKey()){gameState='SPLASH';splashT=0;speedSelected=false;gameSpeed=0.78;}
     ctx.restore();return;
   }
 
+  // Keep player physics at render cadence so jump arc/height stays identical
+  // regardless of speed preset, while world simulation still time-scales.
   updatePlayer();
-  updateEnemies();
-  updateItems();
-  updateStars();
-  updateBombs();
-  updateBullets();
-  updatePfx();
-  updateMovPlats();
+
+  // Time-scale non-player systems by varying fixed simulation ticks per frame.
+  simAccumulator+=gameSpeed;
+  while(simAccumulator>=1){
+    updateEnemies();
+    updateItems();
+    updateStars();
+    updateBombs();
+    updateBullets();
+    updatePfx();
+    updateMovPlats();
+    simAccumulator-=1;
+  }
+
+  // Camera should always follow the player smoothly at display frame rate.
   updateCamera();
 
   drawMap();
