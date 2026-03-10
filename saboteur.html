@@ -57,6 +57,8 @@ const SFX={
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 const TS=16,MW=120,MH=80;
 const T_EMPTY=0,T_SOLID=1,T_PLAT=2,T_LADDER=3,T_WATER=4,T_SPIKE=5,T_EXIT=6,T_CRATE=7;
+// Gameplay tweak: bombs are now unlimited for constant demolition flow.
+const INFINITE_BOMBS=true;
 
 // ── INPUT ─────────────────────────────────────────────────────────────────────
 const keys={},pressed={};
@@ -280,7 +282,7 @@ function resetPlayer(){
      onGround:false,onLadder:false,
      state:'idle',stateTimer:0,
      health:6,maxHealth:6,
-     stars:10,bombs:3,lives:3,score:0,
+     stars:10,bombs:INFINITE_BOMBS?Infinity:3,lives:3,score:0,
      hasDisk:false,hasKeycard:false,
      shield:0,speedBoost:0,
      invincible:0,attackCooldown:0,attackBox:null,
@@ -426,7 +428,7 @@ function updatePlayer(){
     P.state='punch';P.stateTimer=11;P.attackCooldown=18;pressed['KeyX']=false;SFX.punch();
   }else if(pressed['KeyC']&&P.attackCooldown<=0&&P.stars>0){
     P.state='throw';P.stateTimer=10;P.attackCooldown=22;pressed['KeyC']=false;SFX.star();
-  }else if(pressed['KeyB']&&P.attackCooldown<=0&&P.bombs>0){
+  }else if(pressed['KeyB']&&P.attackCooldown<=0&&(INFINITE_BOMBS||P.bombs>0)){
     P.state='bomb_throw';P.stateTimer=12;P.attackCooldown=30;pressed['KeyB']=false;
   }
 
@@ -461,7 +463,8 @@ function spawnStar(){
   stars.push({x:P.x+(P.dir>0?PW+2:-4),y:P.y+PH*0.35,vx:P.dir*6.5,vy:0,life:65});
 }
 function spawnBomb(){
-  P.bombs--;
+  // Infinite bombs mode keeps bomb count untouched for uninterrupted play.
+  if(!INFINITE_BOMBS)P.bombs--;
   bombs.push({x:P.x+(P.dir>0?PW:0),y:P.y+4,vx:P.dir*3.2,vy:-4.5,life:130});
 }
 function spawnBullet(x,y,vx){
@@ -482,6 +485,27 @@ function updateStars(){
       }
     }
     if(hit)stars.splice(i,1);
+  }
+}
+
+
+function isBombDestructibleTile(tx,ty){
+  const t=getT(tx,ty);
+  // Keep outer map shell intact to avoid void leaks while allowing interior
+  // floor/brick destruction exactly where bomb gameplay expects it.
+  if(tx<=0||tx>=MW-1||ty<=0||ty>=MH-1)return false;
+  return t===T_SOLID||t===T_CRATE;
+}
+
+function destroyBombTiles(cx,cy,tileRadius){
+  for(let by2=-tileRadius;by2<=tileRadius;by2++)for(let bx2=-tileRadius;bx2<=tileRadius;bx2++){
+    if(bx2*bx2+by2*by2>tileRadius*tileRadius+1)continue;
+    const tx=cx+bx2,ty=cy+by2;
+    if(isBombDestructibleTile(tx,ty)){
+      const tile=getT(tx,ty);
+      setT(tx,ty,T_EMPTY);
+      spawnPfx(tx*TS+8,ty*TS+8,tile===T_CRATE?8:5,tile===T_CRATE?'#8b5a2b':'#a05a3a');
+    }
   }
 }
 
@@ -506,11 +530,8 @@ function updateBombs(){
       }
       const pdx=(P.x+PW/2)-b.x,pdy=(P.y+PH/2)-b.y;
       if(Math.sqrt(pdx*pdx+pdy*pdy)<rad*0.55)playerHit(2);
-      // Break crates nearby
-      for(let by2=-2;by2<=2;by2++)for(let bx2=-2;bx2<=2;bx2++){
-        const tx=Math.floor(b.x/TS)+bx2,ty=Math.floor(b.y/TS)+by2;
-        if(getT(tx,ty)===T_CRATE){setT(tx,ty,T_EMPTY);spawnPfx(tx*TS+8,ty*TS+8,8,'#8b5a2b');}
-      }
+      // Blast now destroys nearby brick/floor tiles in addition to crates.
+      destroyBombTiles(Math.floor(b.x/TS),Math.floor(b.y/TS),2);
       bombs.splice(i,1);
     }
   }
@@ -714,7 +735,7 @@ function updateItems(){
         P.score+=500;spawnPfx(it.x+4,it.y+4,14,'#44ff44');SFX.keycard();
         break;
       case 'disk':     P.hasDisk=true;P.score+=1000;spawnPfx(it.x+4,it.y+4,20,'#00ffcc');SFX.disk();break;
-      case 'bomb_item':P.bombs=Math.min(P.bombs+2,8);P.score+=200;spawnPfx(it.x+4,it.y+4,10,'#ff8800');SFX.pickup();break;
+      case 'bomb_item':if(!INFINITE_BOMBS)P.bombs=Math.min(P.bombs+2,8);P.score+=200;spawnPfx(it.x+4,it.y+4,10,'#ff8800');SFX.pickup();break;
       case 'shield':   P.shield=300;P.score+=300;spawnPfx(it.x+4,it.y+4,12,'#4488ff');SFX.pickup();break;
       case 'speed':    P.speedBoost=400;P.score+=200;spawnPfx(it.x+4,it.y+4,12,'#88ffff');SFX.pickup();break;
       case 'extralife':P.lives++;P.score+=1000;spawnPfx(it.x+4,it.y+4,20,'#ff88ff');addShake(3);SFX.disk();break;
@@ -1298,8 +1319,8 @@ function drawHUD(){
 
   // Bombs
   ctx.fillStyle='#666';ctx.fillText('BOM',28,VH-8);
-  ctx.fillStyle=P.bombs>0?'#ff8800':'#333';
-  ctx.fillText('x'+P.bombs,44,VH-8);
+  ctx.fillStyle=(INFINITE_BOMBS||P.bombs>0)?'#ff8800':'#333';
+  ctx.fillText(INFINITE_BOMBS?'∞':('x'+P.bombs),44,VH-8);
 
   // Lives
   ctx.fillStyle='#666';ctx.fillText('x',52,VH-18);
