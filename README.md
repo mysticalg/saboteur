@@ -11,6 +11,9 @@ You infiltrate a hostile facility, dodge hazards, fight enemies, collect mission
 - Multiple building floors with ladders, platforms, hazards, and moving elements
 - Built-in sound effects generated with the Web Audio API
 - Keyboard-based movement and combat
+- New command console UI with pause/help/sound controls and tooltips
+- Expanded HUD readability (cooldown bar, clearer status indicators)
+- Extra atmospheric effects (rain layer, polished frame styling)
 - Play instantly in the browser (no install required)
 
 ## How to play
@@ -25,6 +28,9 @@ Use the hosted game link above, or open `saboteur.html` in your browser.
 - **Down Arrow**: Crouch
 - **Up / Down Arrow on ladder**: Climb ladder slowly
 - **Z / X / C on ladder**: Ladder action keys
+- **P**: Pause / Resume
+- **H**: Toggle quick help overlay
+- **M**: Mute / unmute sound effects
 
 ## Run locally
 

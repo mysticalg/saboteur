@@ -5,19 +5,36 @@
 <title>SABOTEUR II — SHADOW OPERATIVE</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;overflow:hidden;}
-canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
-#keys{color:#1a1a1a;font:7px monospace;margin-top:3px;letter-spacing:.4px;}
+body{background:radial-gradient(circle at top,#0b1016 0%,#05070a 45%,#000 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;overflow:hidden;color:#8aa7b8;font-family:monospace;}
+canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;border:1px solid #1b2935;box-shadow:0 0 0 1px #0a1118 inset,0 18px 40px rgba(0,0,0,.65),0 0 28px rgba(0,255,140,.12);border-radius:6px;}
+#top-ui{display:flex;align-items:center;justify-content:space-between;gap:10px;width:min(640px,94vw);margin-bottom:8px;font-size:11px;letter-spacing:.4px;color:#83a5b9;}
+#top-ui .label{display:flex;align-items:center;gap:6px;opacity:.95;}
+.ui-actions{display:flex;gap:6px;}
+.ui-btn{appearance:none;border:1px solid #2f4c5f;background:#0d171f;color:#b3dbf2;font:11px monospace;padding:4px 8px;border-radius:6px;cursor:pointer;line-height:1;}
+.ui-btn:hover{background:#122434;color:#d9f1ff;}
+.ui-btn:focus-visible{outline:2px solid #52d5ff;outline-offset:1px;}
+#keys{color:#2b4254;font:10px monospace;margin-top:8px;letter-spacing:.3px;text-align:center;max-width:min(900px,96vw);line-height:1.4;}
 </style>
 </head>
 <body>
+<div id="top-ui">
+  <div class="label">🕶️ <span>SABOTEUR II · Infiltration Console</span></div>
+  <div class="ui-actions">
+    <button id="btnPause" class="ui-btn" title="Pause/Resume (P)">⏯ Pause</button>
+    <button id="btnHelp" class="ui-btn" title="Toggle quick help (H)">❔ Help</button>
+    <button id="btnMute" class="ui-btn" title="Mute sound effects (M)">🔊 Sound</button>
+  </div>
+</div>
 <canvas id="c"></canvas>
-<div id="keys">← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPACE JUMP | ↓ LADDER (SLOW) | ↑ LADDER (SLOW) | Z/X/C ATTACK | B BOMB (5s COOLDOWN)</div>
+<div id="keys">← → MOVE/LEAP OFF LADDER · SHIFT SPRINT · ↑/SPACE JUMP · ↓/↑ LADDER (SLOW) · Z/X/C ATTACK · B BOMB (5s COOLDOWN) · P PAUSE · H HELP · M MUTE</div>
 <script>
 'use strict';
 // ── CANVAS ────────────────────────────────────────────────────────────────────
 const canvas=document.getElementById('c');
 const ctx=canvas.getContext('2d');
+const btnPause=document.getElementById('btnPause');
+const btnHelp=document.getElementById('btnHelp');
+const btnMute=document.getElementById('btnMute');
 const SCALE=2,VW=320,VH=200;
 canvas.width=VW*SCALE; canvas.height=VH*SCALE;
 ctx.scale(SCALE,SCALE);
@@ -26,6 +43,7 @@ ctx.imageSmoothingEnabled=false;
 // ── AUDIO ─────────────────────────────────────────────────────────────────────
 const AC=new(window.AudioContext||window.webkitAudioContext)();
 function snd(freq,type,dur,vol,freqEnd){
+  if(sfxMuted)return;
   try{
     const g=AC.createGain(),o=AC.createOscillator();
     o.connect(g);g.connect(AC.destination);
@@ -62,6 +80,21 @@ const INFINITE_BOMBS=true;
 // Bomb throws are rate-limited to keep explosive power intentional and readable.
 const BOMB_COOLDOWN_MS=5000;
 
+// UI toggles keep the game accessible with both keyboard and mouse.
+let paused=false;
+let showHelp=false;
+let sfxMuted=false;
+let rain=[];
+function syncUiButtons(){
+  btnPause.textContent=paused?'▶ Resume':'⏯ Pause';
+  btnHelp.textContent=showHelp?'✖ Close Help':'❔ Help';
+  btnMute.textContent=sfxMuted?'🔇 Muted':'🔊 Sound';
+}
+btnPause.addEventListener('click',()=>{if(gameState==='PLAYING'){paused=!paused;syncUiButtons();}});
+btnHelp.addEventListener('click',()=>{showHelp=!showHelp;syncUiButtons();});
+btnMute.addEventListener('click',()=>{sfxMuted=!sfxMuted;syncUiButtons();});
+syncUiButtons();
+
 // ── INPUT ─────────────────────────────────────────────────────────────────────
 const keys={},pressed={};
 window.addEventListener('keydown',e=>{
@@ -71,6 +104,9 @@ window.addEventListener('keydown',e=>{
     if(e.key==='2'){gameSpeed=0.78;speedSelected=true;e.preventDefault();return;}
     if(e.key==='3'){gameSpeed=1.0;speedSelected=true;e.preventDefault();return;}
   }
+  if(e.code==='KeyP'&&gameState==='PLAYING'){paused=!paused;syncUiButtons();e.preventDefault();return;}
+  if(e.code==='KeyH'){showHelp=!showHelp;syncUiButtons();e.preventDefault();return;}
+  if(e.code==='KeyM'){sfxMuted=!sfxMuted;syncUiButtons();e.preventDefault();return;}
   if(!keys[e.code])pressed[e.code]=true;
   keys[e.code]=true;
   ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)&&e.preventDefault();
@@ -86,6 +122,15 @@ function addShake(p){shakePow=Math.max(shakePow,p);}
 function updateShake(){
   if(shakePow>0.2){shakeX=(Math.random()-.5)*shakePow;shakeY=(Math.random()-.5)*shakePow;shakePow*=0.72;}
   else{shakeX=0;shakeY=0;shakePow=0;}
+}
+
+function updateRain(){
+  for(const drop of rain){
+    drop.x-=drop.vx;
+    drop.y+=drop.vy;
+    if(drop.y>VH+6){drop.y=-Math.random()*14;drop.x=Math.random()*VW;}
+    if(drop.x<-8)drop.x=VW+Math.random()*8;
+  }
 }
 
 // ── GAME SPEED ────────────────────────────────────────────────────────────────
@@ -1328,6 +1373,9 @@ function drawHUD(){
   // Inline cooldown status acts as a compact tooltip for bomb availability.
   ctx.fillStyle=bombReady?'#44ff66':'#ff8844';
   ctx.fillText(bombReady?'RDY':(bombCooldownRemainingMs/1000).toFixed(1)+'s',52,VH-8);
+  ctx.fillStyle='#1b1b1b';ctx.fillRect(28,VH-4,36,2);
+  const coolFrac=1-(bombCooldownRemainingMs/BOMB_COOLDOWN_MS);
+  ctx.fillStyle=bombReady?'#44ff88':'#ffaa44';ctx.fillRect(28,VH-4,Math.max(0,Math.floor(36*coolFrac)),2);
 
   // Lives
   ctx.fillStyle='#666';ctx.fillText('x',52,VH-18);
@@ -1385,6 +1433,41 @@ function drawHUD(){
   ctx.fillRect(mini.x+Math.floor(94/MW*mini.w),mini.y+Math.floor(4/MH*mini.h),2,1);
   if(!P.hasDisk){ctx.fillStyle='#00ccff';ctx.fillRect(mini.x+Math.floor(53/MW*mini.w),mini.y+Math.floor(33/MH*mini.h),2,1);}
   if(!P.hasKeycard){ctx.fillStyle='#44ff44';ctx.fillRect(mini.x+Math.floor(90/MW*mini.w),mini.y+Math.floor(23/MH*mini.h),2,1);}
+}
+
+
+function drawRain(){
+  // Rain/scan pass adds motion and depth without expensive particle counts.
+  ctx.globalAlpha=0.32;
+  for(const drop of rain){
+    ctx.fillStyle=drop.c;
+    ctx.fillRect(Math.round(drop.x),Math.round(drop.y),1,drop.len);
+    ctx.fillRect(Math.round(drop.x-1),Math.round(drop.y+drop.len-1),1,1);
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawPauseOverlay(){
+  ctx.fillStyle='rgba(0,0,0,0.58)';ctx.fillRect(0,0,VW,VH);
+  ctx.fillStyle='#0d1a12';ctx.fillRect(VW/2-55,VH/2-20,110,40);
+  ctx.strokeStyle='#2bcf7f';ctx.strokeRect(VW/2-55.5,VH/2-20.5,111,41);
+  ctx.font='bold 8px monospace';ctx.fillStyle='#a8ffd6';ctx.fillText('PAUSED',VW/2-15,VH/2-4);
+  ctx.font='5px monospace';ctx.fillStyle='#7ec7a1';ctx.fillText('Press P or click Resume',VW/2-35,VH/2+10);
+}
+
+function drawHelpOverlay(){
+  ctx.fillStyle='rgba(0,0,0,0.74)';ctx.fillRect(10,10,VW-20,VH-20);
+  ctx.strokeStyle='#3f6780';ctx.strokeRect(10.5,10.5,VW-21,VH-21);
+  ctx.font='bold 6px monospace';ctx.fillStyle='#9bd5ff';ctx.fillText('QUICK OPS GUIDE',18,24);
+  ctx.font='5px monospace';
+  const lines=[
+    '🧭 Objective: collect DISK + KEYCARD, then reach rooftop helicopter.',
+    '⚔ Combat: Z/X/C attack, B throws a bomb when cooldown is ready.',
+    '🪜 Ladders: use UP/DOWN to climb slowly and reposition safely.',
+    '💡 Tip: keep moving; enemies lock onto your last known lane.',
+    '⌨ P pause · H help · M mute. Use speed presets on title screen.'
+  ];
+  lines.forEach((line,i)=>{ctx.fillStyle=i===0?'#d8f0ff':'#9eb4c2';ctx.fillText(line,18,36+i*12);});
 }
 
 // ── VIGNETTE ──────────────────────────────────────────────────────────────────
@@ -1565,6 +1648,13 @@ function initGame(){
   skylineOffsetX=0;
   prevCamX=camX;
   lastFrameMs=performance.now();
+  paused=false;
+  showHelp=false;
+  syncUiButtons();
+  rain=Array.from({length:72},()=>({
+    x:Math.random()*VW,y:Math.random()*VH,vx:0.9+Math.random()*0.7,vy:2.6+Math.random()*1.8,len:2+Math.floor(Math.random()*3),
+    c:Math.random()<0.2?'#88c8ff':'#4a6f93'
+  }));
   // Generate a small, fixed star field at the top of outside scenes.
   skyStars=Array.from({length:30},()=>({
     x:Math.floor(Math.random()*VW),
@@ -1599,6 +1689,24 @@ function loop(){
     ctx.restore();return;
   }
 
+  if(paused){
+    drawMap();
+    drawItems();
+    drawBombs();
+    drawBullets();
+    drawEnemies();
+    drawStars();
+    drawNinja(Math.round(P.x-camX),Math.round(P.y-camY),P.dir,P.state,P.invincible,tick);
+    drawPfx();
+    drawRain();
+    drawVignette();
+    drawHUD();
+    drawPauseOverlay();
+    if(showHelp)drawHelpOverlay();
+    ctx.restore();
+    return;
+  }
+
   // Keep player physics at render cadence so jump arc/height stays identical
   // regardless of speed preset, while world simulation still time-scales.
   updatePlayer();
@@ -1628,6 +1736,7 @@ function loop(){
     updateMovPlats();
     simAccumulator-=1;
   }
+  updateRain();
 
   // Camera should always follow the player smoothly at display frame rate.
   updateCamera();
@@ -1644,8 +1753,10 @@ function loop(){
   drawStars();
   drawNinja(Math.round(P.x-camX),Math.round(P.y-camY),P.dir,P.state,P.invincible,tick);
   drawPfx();
+  drawRain();
   drawVignette();
   drawHUD();
+  if(showHelp)drawHelpOverlay();
 
   ctx.restore();
 }
