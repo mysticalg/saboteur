@@ -263,6 +263,24 @@ function buildMap(){
   ];
 }
 
+function validateMapLayout(){
+  // Lightweight map diagnostics catch authoring mistakes early in development.
+  let exits=0,ladders=0,hazards=0,crates=0;
+  for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
+    const t=getT(x,y);
+    if(t===T_EXIT)exits++;
+    else if(t===T_LADDER)ladders++;
+    else if(t===T_SPIKE||t===T_WATER)hazards++;
+    else if(t===T_CRATE)crates++;
+  }
+  const issues=[];
+  if(exits!==1)issues.push(`expected 1 exit, found ${exits}`);
+  if(ladders<40)issues.push(`unexpectedly low ladder count (${ladders})`);
+  if(hazards<20)issues.push(`hazard coverage too low (${hazards})`);
+  if(crates<6)issues.push(`crate count too low (${crates})`);
+  if(issues.length)console.warn('Map validation warnings:',issues.join('; '));
+}
+
 // ── PHYSICS ───────────────────────────────────────────────────────────────────
 const GRAV=0.38,MAXFALL=8;
 function isBlockingTile(e,tx,ty){
@@ -335,7 +353,9 @@ function resetPlayer(){
      invincible:0,attackCooldown:0,attackBox:null,
      // Timestamp (in ms) when the next bomb throw becomes available.
      nextBombAtMs:0,
-     combo:0,comboTimer:0,crouching:false};
+     combo:0,comboTimer:0,crouching:false,
+     // Turn-lean timer drives quick left/right pivot animation readability.
+     turnTimer:0,lastFacingDir:1};
 }
 
 function getBombCooldownRemainingMs(){
@@ -458,8 +478,17 @@ function updatePlayer(){
   const hasMoveInput=moveLeft||moveRight;
 
   P.vx=0;
-  if(moveLeft){P.vx=-spd;P.dir=-1;}
-  if(moveRight){P.vx=spd;P.dir=1;}
+  if(moveLeft){P.vx=-spd;}
+  if(moveRight){P.vx=spd;}
+
+  if(P.vx!==0){
+    const desiredDir=P.vx>0?1:-1;
+    if(desiredDir!==P.dir&&Math.abs(P.vx)>0.22)P.turnTimer=8;
+    P.dir=desiredDir;
+    P.lastFacingDir=desiredDir;
+  }else if(P.turnTimer>0){
+    P.turnTimer--;
+  }
 
   const wasOnGround=P.onGround;
   if((keys['ArrowUp']||keys['Space'])&&P.onGround){
@@ -985,6 +1014,10 @@ function drawNinja(sx,sy,dir,state,inv,t){
   ctx.save();ctx.translate(sx+(dir<0?PW:0),sy);if(dir<0)ctx.scale(-1,1);
   // Slower animation sampling so running cycles feel less rushed.
   const fr=t>>4;
+  const runAnimating=state==='run'&&Math.abs(P.vx)>0.08;
+  // Left/right body lean creates readable momentum and direction changes.
+  const lean=runAnimating?Math.max(-2,Math.min(2,P.vx*1.35)):0;
+  const bob=runAnimating?((fr%2)?1:0):0;
 
   // Shield aura
   if(P.shield>0){
@@ -995,6 +1028,13 @@ function drawNinja(sx,sy,dir,state,inv,t){
 
   // Shadow
   ctx.fillStyle='rgba(0,0,0,0.25)';ctx.fillRect(1,PH+1,PW-2,2);
+
+  // Sprint streaks communicate strong left/right motion without heavy particles.
+  if(runAnimating&&Math.abs(P.vx)>1.55){
+    const tail=-2;
+    ctx.fillStyle='rgba(170,220,255,0.35)';ctx.fillRect(tail,10+(fr%2),3,1);
+    ctx.fillStyle='rgba(255,255,255,0.22)';ctx.fillRect(tail-2,12-((fr+1)%2),2,1);
+  }
 
   if(state==='duck'||state==='crawl'){
     const crawlStep=state==='crawl'?(fr%4<2?0:1):0;
@@ -1067,20 +1107,24 @@ function drawNinja(sx,sy,dir,state,inv,t){
   }
 
   // Body
-  ctx.fillStyle='#111';ctx.fillRect(1,6,10,9);
-  ctx.fillStyle='#1a1a1a';ctx.fillRect(3,7,3,4);ctx.fillRect(7,7,3,4);
-  ctx.fillStyle='#333';ctx.fillRect(1,12,10,2);ctx.fillStyle='#888';ctx.fillRect(4,12,4,2);
+  const torsoX=1+Math.round(lean*0.6);
+  const torsoY=6+bob;
+  ctx.fillStyle='#111';ctx.fillRect(torsoX,torsoY,10,9);
+  ctx.fillStyle='#1a1a1a';ctx.fillRect(torsoX+2,torsoY+1,3,4);ctx.fillRect(torsoX+6,torsoY+1,3,4);
+  ctx.fillStyle='#333';ctx.fillRect(torsoX,torsoY+6,10,2);ctx.fillStyle='#888';ctx.fillRect(torsoX+3,torsoY+6,4,2);
+  if(P.turnTimer>0&&state==='run'){
+    ctx.fillStyle='rgba(120,220,255,0.35)';ctx.fillRect(torsoX-1,torsoY+2,12,1);
+  }
 
   // Arms
   ctx.fillStyle='#111';
-  const runAnimating=state==='run'&&Math.abs(P.vx)>0.08;
   const aSwing=runAnimating?(fr%2?2:-2):0;
-  ctx.fillRect(-2,6+aSwing,3,7);ctx.fillRect(PW-1,6-aSwing,3,7);
-  ctx.fillStyle='#c8996a';ctx.fillRect(-2,11+aSwing,3,2);ctx.fillRect(PW-1,11-aSwing,3,2);
+  ctx.fillRect(-2,6+bob+aSwing,3,7);ctx.fillRect(PW-1,6+bob-aSwing,3,7);
+  ctx.fillStyle='#c8996a';ctx.fillRect(-2,11+bob+aSwing,3,2);ctx.fillRect(PW-1,11+bob-aSwing,3,2);
 
   // Scarf
-  ctx.fillStyle='#cc0000';ctx.fillRect(0,5,12,3);
-  if(runAnimating||state==='jump'){ctx.fillStyle='#aa0000';ctx.fillRect(-2,5,3,2);}
+  ctx.fillStyle='#cc0000';ctx.fillRect(0,5+bob,12,3);
+  if(runAnimating||state==='jump'){ctx.fillStyle='#aa0000';ctx.fillRect(-2,5+bob+(fr%2),3,2);}
 
   // Head
   ctx.fillStyle='#c8996a';ctx.fillRect(2,0,8,6);
@@ -1639,7 +1683,7 @@ function drawWin(){
 // ── INIT & MAIN LOOP ──────────────────────────────────────────────────────────
 let gameState='SPLASH';
 function initGame(){
-  buildMap();resetPlayer();spawnEnemies();spawnItems();
+  buildMap();validateMapLayout();resetPlayer();spawnEnemies();spawnItems();
   pfx=[];stars=[];bombs=[];bullets=[];camX=0;camY=0;
   simAccumulator=0;
   missionTimeLeftMs=20*60*1000;
