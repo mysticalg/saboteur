@@ -266,12 +266,32 @@ function buildMap(){
       if(x%9===0&&cy+width+1<MH-1)for(let lx=-1;lx<=1;lx++)setT(x+lx,cy+width+1,T_PLAT);
     }
   }
-  carveCavernPath(6,38,67,3,2);
-  carveCavernPath(42,78,70,2,2);
-  carveCavernPath(82,114,66,3,2);
-  // A vertical sinkhole passage joins upper basement into the cave network.
-  for(let y=58;y<=72;y++)for(let x=56;x<=60;x++)setT(x,y,T_EMPTY);
-  for(let y=58;y<=72;y++)setT(58,y,T_LADDER);
+  // Use narrow widths for claustrophobic cave movement.
+  carveCavernPath(6,38,67,2,1);
+  carveCavernPath(42,78,70,1,1);
+  carveCavernPath(82,114,66,2,1);
+
+  // Reinforce cave shells with thick solid bands to feel enclosed and heavy.
+  for(let x=4;x<116;x++)for(let y=61;y<=74;y++)if(getT(x,y)===T_EMPTY){
+    if(getT(x,y-2)!==T_EMPTY)setT(x,y-2,T_SOLID);
+    if(getT(x,y+2)!==T_EMPTY)setT(x,y+2,T_SOLID);
+    if(getT(x-2,y)!==T_EMPTY)setT(x-2,y,T_SOLID);
+    if(getT(x+2,y)!==T_EMPTY)setT(x+2,y,T_SOLID);
+  }
+
+  // Tight vertical shafts with thick wall columns for pressure-corridor gameplay.
+  function carveShaft(x,yTop,yBottom){
+    for(let y=yTop;y<=yBottom;y++){
+      setT(x,y,T_EMPTY);
+      setT(x-1,y,T_EMPTY);
+      setT(x-3,y,T_SOLID);setT(x-2,y,T_SOLID);
+      setT(x+2,y,T_SOLID);setT(x+3,y,T_SOLID);
+    }
+    for(let y=yTop;y<=yBottom;y++)setT(x,y,T_LADDER);
+  }
+  carveShaft(18,60,73);
+  carveShaft(58,58,73);
+  carveShaft(97,60,73);
 
   // Place torches as static light emitters to guide navigation in darkness.
   cavernTorches=[
@@ -682,8 +702,9 @@ function spawnEnemies(){
     {y:33,g:[[5,9],[22,7],[48,8],[72,6],[95,7]],d:[[32,8],[65,9]],s:[[15],[55],[100]],h:[[38]]},
     {y:43,g:[[4,7],[30,7],[58,7],[82,5],[110,5]],d:[[18,8],[75,8]],s:[[44],[92]],h:[[65]]},
     {y:53,g:[[5,6],[28,7],[52,8],[75,6],[100,6]],d:[[16,8],[62,8],[95,7]],s:[[38],[84]],h:[[50],[90]]},
-    {y:63,g:[[5,7],[32,6],[62,6],[92,7]],d:[[20,8],[55,7],[85,8]],s:[[15],[48],[75],[105]],h:[[70]]},
-    {y:73,g:[[5,8],[45,7],[85,6]],d:[[25,8],[65,8]],s:[[35],[75]],h:[[55],[100]]},
+    // Underground population intentionally reduced for stealthy claustrophobic pacing.
+    {y:63,g:[[8,5],[88,5]],d:[[52,6]],s:[[104]],h:[]},
+    {y:73,g:[[12,5]],d:[[58,6]],s:[[92]],h:[[40]]},
   ];
 
   floors.forEach(def=>{
@@ -934,13 +955,14 @@ function drawTile(tx,ty,sx,sy){
   const t=getT(tx,ty);if(t===T_EMPTY)return;
   switch(t){
     case T_SOLID:{
-      ctx.fillStyle='#4a1808';ctx.fillRect(sx,sy,TS,TS);
-      ctx.fillStyle='#250a02';ctx.fillRect(sx,sy,TS,1);ctx.fillRect(sx,sy,1,TS);
-      ctx.fillStyle='#6e2c1a';
+      const caveTone=ty>=58;
+      ctx.fillStyle=caveTone?'#10233f':'#4a1808';ctx.fillRect(sx,sy,TS,TS);
+      ctx.fillStyle=caveTone?'#091427':'#250a02';ctx.fillRect(sx,sy,TS,1);ctx.fillRect(sx,sy,1,TS);
+      ctx.fillStyle=caveTone?'#1d3d66':'#6e2c1a';
       const row=ty%2,off=row?8:0;
       ctx.fillRect(sx+1+off,sy+2,6,5);ctx.fillRect(sx+9+off,sy+2,5,5);
       ctx.fillRect(sx+1+(8-off),sy+9,7,5);ctx.fillRect(sx+9+(off?0:8)%16,sy+9,5,5);
-      if(getT(tx,ty-1)!==T_SOLID){ctx.fillStyle='#8a4428';ctx.fillRect(sx,sy,TS,2);}
+      if(getT(tx,ty-1)!==T_SOLID){ctx.fillStyle=caveTone?'#2f5b8f':'#8a4428';ctx.fillRect(sx,sy,TS,2);}
       break;
     }
     case T_PLAT:{
@@ -959,11 +981,12 @@ function drawTile(tx,ty,sx,sy){
       break;
     }
     case T_WATER:{
-      ctx.fillStyle='#060c2a';ctx.fillRect(sx,sy,TS,TS);
+      const caveWater=ty>=58;
+      ctx.fillStyle=caveWater?'#040d22':'#060c2a';ctx.fillRect(sx,sy,TS,TS);
       const wv=Math.sin(tick*0.07+tx*0.7)*1.5;
-      ctx.fillStyle='#0a2060';ctx.fillRect(sx,sy+wv,TS,3);ctx.fillRect(sx,sy+wv+6,TS,2);
-      ctx.fillStyle='rgba(15,50,160,0.25)';ctx.fillRect(sx,sy,TS,TS);
-      ctx.fillStyle='rgba(80,160,255,0.1)';ctx.fillRect(sx,sy,TS,2);
+      ctx.fillStyle=caveWater?'#113a88':'#0a2060';ctx.fillRect(sx,sy+wv,TS,3);ctx.fillRect(sx,sy+wv+6,TS,2);
+      ctx.fillStyle=caveWater?'rgba(35,90,200,0.28)':'rgba(15,50,160,0.25)';ctx.fillRect(sx,sy,TS,TS);
+      ctx.fillStyle=caveWater?'rgba(140,200,255,0.15)':'rgba(80,160,255,0.1)';ctx.fillRect(sx,sy,TS,2);
       break;
     }
     case T_SPIKE:{
@@ -1004,9 +1027,9 @@ function drawTile(tx,ty,sx,sy){
 
 function drawMap(){
   const outsideView=camY<120;
-  // Background gradient — deeper = darker/redder (underground)
+  // Background gradient — deeper areas shift to dark blue cavern tones.
   const depth=Math.min(1,camY/(MH*TS));
-  const r=Math.floor(depth*12),g2=Math.floor(depth*3),b=Math.floor(22-depth*20);
+  const r=Math.floor(4+depth*2),g2=Math.floor(8+depth*12),b=Math.floor(18+depth*26);
   ctx.fillStyle=`rgb(${r},${g2},${b})`;ctx.fillRect(0,0,VW,VH);
 
   // Distant parallax skyline (only visible near roof / outside areas).
