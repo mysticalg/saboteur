@@ -14,6 +14,8 @@ You infiltrate a hostile facility, dodge hazards, fight enemies, collect mission
 - New command console UI with pause/help/sound controls and tooltips
 - Expanded HUD readability (cooldown bar, clearer status indicators)
 - Extra atmospheric effects (rain layer, polished frame styling)
+- Dynamic underground lighting, bloom glows, and limited-visibility dark zones
+- Basement cavern network with torch-lit side routes and vertical sinkhole link
 - Play instantly in the browser (no install required)
 
 ## How to play
