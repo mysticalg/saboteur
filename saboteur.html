@@ -26,7 +26,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;borde
   </div>
 </div>
 <canvas id="c"></canvas>
-<div id="keys">← → MOVE/LEAP OFF LADDER · SHIFT SPRINT · ↑/SPACE JUMP · ↓/↑ LADDER (SLOW) · Z/X/C ATTACK · B BOMB (5s COOLDOWN) · P PAUSE · H HELP · M MUTE</div>
+<div id="keys">← → MOVE/LEAP OFF LADDER · SHIFT SPRINT · ↑/SPACE JUMP · ↓ HOLD WHILE STILL = SHADOW · ↓/↑ LADDER (SLOW) · Z/X/C ATTACK · B BOMB (5s COOLDOWN) · P PAUSE · H HELP · M MUTE</div>
 <script>
 'use strict';
 // ── CANVAS ────────────────────────────────────────────────────────────────────
@@ -402,6 +402,8 @@ function resetPlayer(){
      // Timestamp (in ms) when the next bomb throw becomes available.
      nextBombAtMs:0,
      combo:0,comboTimer:0,crouching:false,
+     // Shadow stance: while holding down and perfectly still, KAGE blends in.
+     shadowMode:false,
      // Turn-lean timer drives quick left/right pivot animation readability.
      turnTimer:0,lastFacingDir:1};
 }
@@ -416,6 +418,7 @@ function canThrowBombNow(){
 
 function playerHit(dmg){
   if(P.invincible>0||P.shield>0)return;
+  P.shadowMode=false;
   P.health-=dmg;
   SFX.hurt();addShake(4+dmg*2);
   spawnPfx(P.x+PW/2,P.y+PH/2,7,'#ff6622');
@@ -525,11 +528,17 @@ function updatePlayer(){
   const moveRight=keys['ArrowRight'];
   const hasMoveInput=moveLeft||moveRight;
 
+  // Shadow ability: hold DOWN while stationary on ground to become unseen by NPC AI.
+  const wantsShadow=keys['ArrowDown']&&!hasMoveInput&&P.onGround&&!P.onLadder;
+  const canShadow=wantsShadow&&Math.abs(P.vx)<0.03&&Math.abs(P.vy)<0.03&&P.attackCooldown<=0;
+  P.shadowMode=!!canShadow;
+
   P.vx=0;
   if(moveLeft){P.vx=-spd;}
   if(moveRight){P.vx=spd;}
 
   if(P.vx!==0){
+    P.shadowMode=false;
     const desiredDir=P.vx>0?1:-1;
     if(desiredDir!==P.dir&&Math.abs(P.vx)>0.22)P.turnTimer=8;
     P.dir=desiredDir;
@@ -542,16 +551,21 @@ function updatePlayer(){
   if((keys['ArrowUp']||keys['Space'])&&P.onGround){
     // Tune jump to be ~2x slower and ~half as high as the prior setup.
     const jumpImpulse=(6.5*Math.sqrt(2))*0.155;
+    P.shadowMode=false;
     P.vy=-jumpImpulse;P.onGround=false;P.state='jump';SFX.jump();
   }
 
   if(pressed['KeyZ']&&P.attackCooldown<=0){
+    P.shadowMode=false;
     P.state='kick';P.stateTimer=13;P.attackCooldown=22;pressed['KeyZ']=false;SFX.kick();
   }else if(pressed['KeyX']&&P.attackCooldown<=0){
+    P.shadowMode=false;
     P.state='punch';P.stateTimer=11;P.attackCooldown=18;pressed['KeyX']=false;SFX.punch();
   }else if(pressed['KeyC']&&P.attackCooldown<=0&&P.stars>0){
+    P.shadowMode=false;
     P.state='throw';P.stateTimer=10;P.attackCooldown=22;pressed['KeyC']=false;SFX.star();
   }else if(pressed['KeyB']&&P.attackCooldown<=0&&canThrowBombNow()&&(INFINITE_BOMBS||P.bombs>0)){
+    P.shadowMode=false;
     P.state='bomb_throw';P.stateTimer=12;P.attackCooldown=30;pressed['KeyB']=false;
     // Start cooldown as soon as the throw animation commits.
     P.nextBombAtMs=performance.now()+BOMB_COOLDOWN_MS;
@@ -559,6 +573,7 @@ function updatePlayer(){
 
   const prevOnGround=P.onGround;
   moveEntity(P);
+  if(!P.onGround)P.shadowMode=false;
   if(!prevOnGround&&P.onGround)SFX.land();
 
   if(!['kick','punch','throw','bomb_throw','hurt','climb'].includes(P.state)){
@@ -795,11 +810,12 @@ function updateEnemies(){
     const dy=(P.y+PH/2)-(e.y+e.h/2);
     const dist=Math.sqrt(dx*dx+dy*dy);
     const sameFloor=Math.abs(dy)<50;
+    const playerVisible=!P.shadowMode;
 
     if(e.type==='sniper'){
       e.dir=dx>0?1:-1;
       if(e.shootCooldown>0)e.shootCooldown--;
-      if(dist<200&&sameFloor&&e.shootCooldown<=0){
+      if(playerVisible&&dist<200&&sameFloor&&e.shootCooldown<=0){
         spawnBullet(e.x+(e.dir>0?e.w+2:-4),e.y+e.h*0.35,e.dir*5.2);
         SFX.shoot();e.shootCooldown=95+Math.random()*30;
       }
@@ -815,21 +831,21 @@ function updateEnemies(){
       const fx=e.dir>0?e.x+e.w+2:e.x-2;
       if(!isSolid(Math.floor(fx/TS),Math.floor((e.y+e.h+2)/TS))&&
          !isPlat(Math.floor(fx/TS),Math.floor((e.y+e.h+2)/TS))){e.dir*=-1;}
-      if(dist<CHASE_D&&sameFloor){e.state='chase';e.alertTimer=220;}
+      if(playerVisible&&dist<CHASE_D&&sameFloor){e.state='chase';e.alertTimer=220;}
     }else{
       e.alertTimer--;
       if(e.alertTimer<=0){e.state='patrol';return;}
-      if(dist<CHASE_D&&sameFloor)e.alertTimer=220;
-      if(sameFloor){e.vx=Math.sign(dx)*(sp*1.5);e.dir=Math.sign(dx)||e.dir;}
+      if(playerVisible&&dist<CHASE_D&&sameFloor)e.alertTimer=220;
+      if(playerVisible&&sameFloor){e.vx=Math.sign(dx)*(sp*1.5);e.dir=Math.sign(dx)||e.dir;}else{e.vx*=0.65;}
       // Guards shoot while chasing
       if(e.type==='guard'){
         if(e.shootCooldown>0)e.shootCooldown--;
-        if(dist<110&&sameFloor&&e.shootCooldown<=0){
+        if(playerVisible&&dist<110&&sameFloor&&e.shootCooldown<=0){
           spawnBullet(e.x+(e.dir>0?e.w+2:-4),e.y+8,e.dir*4.5);
           SFX.shoot();e.shootCooldown=130;
         }
       }
-      if(dist<ATK_D+e.w&&sameFloor&&e.stateTimer<=0){
+      if(playerVisible&&dist<ATK_D+e.w&&sameFloor&&e.stateTimer<=0){
         e.stateTimer=35;playerHit(e.type==='heavy'?2:1);
       }
     }
@@ -1128,6 +1144,16 @@ function drawNinja(sx,sy,dir,state,inv,t){
 
   // Shadow
   ctx.fillStyle='rgba(0,0,0,0.25)';ctx.fillRect(1,PH+1,PW-2,2);
+
+  if(P.shadowMode){
+    // Shadow stance renders KAGE as a dim silhouette to signal stealth state.
+    ctx.globalAlpha=0.45+Math.sin(t*0.2)*0.08;
+    ctx.fillStyle='#0d1a2a';ctx.fillRect(1,2,10,17);
+    ctx.fillStyle='rgba(120,170,230,0.28)';ctx.fillRect(3,4,6,9);
+    ctx.fillStyle='rgba(170,210,255,0.3)';ctx.fillRect(6,6,2,1);
+    ctx.globalAlpha=1;
+    return ctx.restore();
+  }
 
   // Sprint streaks communicate strong left/right motion without heavy particles.
   if(runAnimating&&Math.abs(P.vx)>1.55){
@@ -1603,6 +1629,7 @@ function drawHUD(){
     ctx.fillStyle='rgba(68,136,255,0.5)';ctx.fillRect(0,0,Math.ceil(VW*P.shield/300),1);
   }
   if(P.speedBoost>0){ctx.fillStyle='#88ffff';ctx.fillText('SPEED',212,VH-8);}
+  if(P.shadowMode){ctx.fillStyle=(tick>>2)&1?'#8fb8ff':'#5b7fd1';ctx.fillText('SHADOW',246,VH-8);}
 
   // Combo
   if(P.combo>=2&&P.comboTimer>0){
@@ -1653,7 +1680,7 @@ function drawHelpOverlay(){
     '🧭 Objective: collect DISK + KEYCARD, then reach rooftop helicopter.',
     '⚔ Combat: Z/X/C attack, B throws a bomb when cooldown is ready.',
     '🪜 Ladders: use UP/DOWN to climb slowly and reposition safely.',
-    '💡 Tip: keep moving; enemies lock onto your last known lane.',
+    '💡 Tip: hold DOWN while still to enter SHADOW and evade NPC detection.',
     '⌨ P pause · H help · M mute. Use speed presets on title screen.'
   ];
   lines.forEach((line,i)=>{ctx.fillStyle=i===0?'#d8f0ff':'#9eb4c2';ctx.fillText(line,18,36+i*12);});

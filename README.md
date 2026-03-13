@@ -30,6 +30,7 @@ Use the hosted game link above, or open `saboteur.html` in your browser.
 - **Shift**: Sprint
 - **Up Arrow / Space**: Jump
 - **Down Arrow**: Crouch
+- **Down Arrow (while still on ground)**: Enter shadow stealth (NPCs lose detection)
 - **Up / Down Arrow on ladder**: Climb ladder slowly
 - **Z / X / C on ladder**: Ladder action keys
 - **P**: Pause / Resume
