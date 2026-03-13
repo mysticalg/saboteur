@@ -5,19 +5,36 @@
 <title>SABOTEUR II — SHADOW OPERATIVE</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;overflow:hidden;}
-canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
-#keys{color:#1a1a1a;font:7px monospace;margin-top:3px;letter-spacing:.4px;}
+body{background:radial-gradient(circle at top,#0b1016 0%,#05070a 45%,#000 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;overflow:hidden;color:#8aa7b8;font-family:monospace;}
+canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;border:1px solid #1b2935;box-shadow:0 0 0 1px #0a1118 inset,0 18px 40px rgba(0,0,0,.65),0 0 28px rgba(0,255,140,.12);border-radius:6px;}
+#top-ui{display:flex;align-items:center;justify-content:space-between;gap:10px;width:min(640px,94vw);margin-bottom:8px;font-size:11px;letter-spacing:.4px;color:#83a5b9;}
+#top-ui .label{display:flex;align-items:center;gap:6px;opacity:.95;}
+.ui-actions{display:flex;gap:6px;}
+.ui-btn{appearance:none;border:1px solid #2f4c5f;background:#0d171f;color:#b3dbf2;font:11px monospace;padding:4px 8px;border-radius:6px;cursor:pointer;line-height:1;}
+.ui-btn:hover{background:#122434;color:#d9f1ff;}
+.ui-btn:focus-visible{outline:2px solid #52d5ff;outline-offset:1px;}
+#keys{color:#2b4254;font:10px monospace;margin-top:8px;letter-spacing:.3px;text-align:center;max-width:min(900px,96vw);line-height:1.4;}
 </style>
 </head>
 <body>
+<div id="top-ui">
+  <div class="label">🕶️ <span>SABOTEUR II · Infiltration Console</span></div>
+  <div class="ui-actions">
+    <button id="btnPause" class="ui-btn" title="Pause/Resume (P)">⏯ Pause</button>
+    <button id="btnHelp" class="ui-btn" title="Toggle quick help (H)">❔ Help</button>
+    <button id="btnMute" class="ui-btn" title="Mute sound effects (M)">🔊 Sound</button>
+  </div>
+</div>
 <canvas id="c"></canvas>
-<div id="keys">← → MOVE/LEAP OFF LADDER | SHIFT SPRINT | ↑/SPACE JUMP | ↓ LADDER (SLOW) | ↑ LADDER (SLOW) | Z/X/C ATTACK | B BOMB (5s COOLDOWN)</div>
+<div id="keys">← → MOVE/LEAP OFF LADDER · SHIFT SPRINT · ↑/SPACE JUMP · ↓ HOLD WHILE STILL = SHADOW · ↓/↑ LADDER (SLOW) · Z/X/C ATTACK · B BOMB (5s COOLDOWN) · P PAUSE · H HELP · M MUTE</div>
 <script>
 'use strict';
 // ── CANVAS ────────────────────────────────────────────────────────────────────
 const canvas=document.getElementById('c');
 const ctx=canvas.getContext('2d');
+const btnPause=document.getElementById('btnPause');
+const btnHelp=document.getElementById('btnHelp');
+const btnMute=document.getElementById('btnMute');
 const SCALE=2,VW=320,VH=200;
 canvas.width=VW*SCALE; canvas.height=VH*SCALE;
 ctx.scale(SCALE,SCALE);
@@ -26,6 +43,7 @@ ctx.imageSmoothingEnabled=false;
 // ── AUDIO ─────────────────────────────────────────────────────────────────────
 const AC=new(window.AudioContext||window.webkitAudioContext)();
 function snd(freq,type,dur,vol,freqEnd){
+  if(sfxMuted)return;
   try{
     const g=AC.createGain(),o=AC.createOscillator();
     o.connect(g);g.connect(AC.destination);
@@ -62,6 +80,21 @@ const INFINITE_BOMBS=true;
 // Bomb throws are rate-limited to keep explosive power intentional and readable.
 const BOMB_COOLDOWN_MS=5000;
 
+// UI toggles keep the game accessible with both keyboard and mouse.
+let paused=false;
+let showHelp=false;
+let sfxMuted=false;
+let rain=[];
+function syncUiButtons(){
+  btnPause.textContent=paused?'▶ Resume':'⏯ Pause';
+  btnHelp.textContent=showHelp?'✖ Close Help':'❔ Help';
+  btnMute.textContent=sfxMuted?'🔇 Muted':'🔊 Sound';
+}
+btnPause.addEventListener('click',()=>{if(gameState==='PLAYING'){paused=!paused;syncUiButtons();}});
+btnHelp.addEventListener('click',()=>{showHelp=!showHelp;syncUiButtons();});
+btnMute.addEventListener('click',()=>{sfxMuted=!sfxMuted;syncUiButtons();});
+syncUiButtons();
+
 // ── INPUT ─────────────────────────────────────────────────────────────────────
 const keys={},pressed={};
 window.addEventListener('keydown',e=>{
@@ -71,6 +104,9 @@ window.addEventListener('keydown',e=>{
     if(e.key==='2'){gameSpeed=0.78;speedSelected=true;e.preventDefault();return;}
     if(e.key==='3'){gameSpeed=1.0;speedSelected=true;e.preventDefault();return;}
   }
+  if(e.code==='KeyP'&&gameState==='PLAYING'){paused=!paused;syncUiButtons();e.preventDefault();return;}
+  if(e.code==='KeyH'){showHelp=!showHelp;syncUiButtons();e.preventDefault();return;}
+  if(e.code==='KeyM'){sfxMuted=!sfxMuted;syncUiButtons();e.preventDefault();return;}
   if(!keys[e.code])pressed[e.code]=true;
   keys[e.code]=true;
   ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)&&e.preventDefault();
@@ -86,6 +122,15 @@ function addShake(p){shakePow=Math.max(shakePow,p);}
 function updateShake(){
   if(shakePow>0.2){shakeX=(Math.random()-.5)*shakePow;shakeY=(Math.random()-.5)*shakePow;shakePow*=0.72;}
   else{shakeX=0;shakeY=0;shakePow=0;}
+}
+
+function updateRain(){
+  for(const drop of rain){
+    drop.x-=drop.vx;
+    drop.y+=drop.vy;
+    if(drop.y>VH+6){drop.y=-Math.random()*14;drop.x=Math.random()*VW;}
+    if(drop.x<-8)drop.x=VW+Math.random()*8;
+  }
 }
 
 // ── GAME SPEED ────────────────────────────────────────────────────────────────
@@ -108,6 +153,8 @@ let keycardsFound=0;
 // Outside parallax offset: camera-driven (only while screen actually scrolls).
 let skylineOffsetX=0;
 let prevCamX=0;
+// Underground torches and cavern lights are populated during map build.
+let cavernTorches=[];
 
 // Lightweight star field for outdoor scenes near the roof.
 let skyStars=[];
@@ -207,6 +254,52 @@ function buildMap(){
   ];
   ladderSegments.forEach(([x,yTop,yBottom])=>addLadderSegment(x,yTop,yBottom));
 
+  // Carve an underground cavern network in lower floors where visibility is limited.
+  // These tunnels create optional side routes and ambush pockets.
+  function carveCavernPath(startX,endX,baseY,waveAmp,width){
+    const minX=Math.min(startX,endX),maxX=Math.max(startX,endX);
+    for(let x=minX;x<=maxX;x++){
+      const t=(x-minX)/Math.max(1,(maxX-minX));
+      const cy=Math.round(baseY+Math.sin(t*6.2831)*waveAmp);
+      for(let y=cy-width;y<=cy+width;y++)setT(x,y,T_EMPTY);
+      // Add occasional lip platforms inside the cave path for traversal variety.
+      if(x%9===0&&cy+width+1<MH-1)for(let lx=-1;lx<=1;lx++)setT(x+lx,cy+width+1,T_PLAT);
+    }
+  }
+  // Use narrow widths for claustrophobic cave movement.
+  carveCavernPath(6,38,67,2,1);
+  carveCavernPath(42,78,70,1,1);
+  carveCavernPath(82,114,66,2,1);
+
+  // Reinforce cave shells with thick solid bands to feel enclosed and heavy.
+  for(let x=4;x<116;x++)for(let y=61;y<=74;y++)if(getT(x,y)===T_EMPTY){
+    if(getT(x,y-2)!==T_EMPTY)setT(x,y-2,T_SOLID);
+    if(getT(x,y+2)!==T_EMPTY)setT(x,y+2,T_SOLID);
+    if(getT(x-2,y)!==T_EMPTY)setT(x-2,y,T_SOLID);
+    if(getT(x+2,y)!==T_EMPTY)setT(x+2,y,T_SOLID);
+  }
+
+  // Tight vertical shafts with thick wall columns for pressure-corridor gameplay.
+  function carveShaft(x,yTop,yBottom){
+    for(let y=yTop;y<=yBottom;y++){
+      setT(x,y,T_EMPTY);
+      setT(x-1,y,T_EMPTY);
+      setT(x-3,y,T_SOLID);setT(x-2,y,T_SOLID);
+      setT(x+2,y,T_SOLID);setT(x+3,y,T_SOLID);
+    }
+    for(let y=yTop;y<=yBottom;y++)setT(x,y,T_LADDER);
+  }
+  carveShaft(18,60,73);
+  carveShaft(58,58,73);
+  carveShaft(97,60,73);
+
+  // Place torches as static light emitters to guide navigation in darkness.
+  cavernTorches=[
+    {x:10,y:63,flicker:0.7},{x:23,y:68,flicker:1.1},{x:36,y:64,flicker:0.9},
+    {x:48,y:71,flicker:1.3},{x:66,y:67,flicker:0.8},{x:76,y:72,flicker:1.2},
+    {x:88,y:64,flicker:0.95},{x:101,y:69,flicker:1.4},{x:112,y:66,flicker:1.0},
+  ];
+
   // Moving platforms
   movPlats=[
     {x:48*TS,y:11*TS,w:4*TS,h:4,dir:1,spd:0.7,min:38*TS,max:58*TS},
@@ -216,6 +309,24 @@ function buildMap(){
     {x:25*TS,y:50*TS,w:4*TS,h:4,dir:1,spd:0.65,min:14*TS,max:36*TS},
     {x:47*TS,y:60*TS,w:3*TS,h:4,dir:1,spd:0.9,min:36*TS,max:62*TS},
   ];
+}
+
+function validateMapLayout(){
+  // Lightweight map diagnostics catch authoring mistakes early in development.
+  let exits=0,ladders=0,hazards=0,crates=0;
+  for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
+    const t=getT(x,y);
+    if(t===T_EXIT)exits++;
+    else if(t===T_LADDER)ladders++;
+    else if(t===T_SPIKE||t===T_WATER)hazards++;
+    else if(t===T_CRATE)crates++;
+  }
+  const issues=[];
+  if(exits!==1)issues.push(`expected 1 exit, found ${exits}`);
+  if(ladders<40)issues.push(`unexpectedly low ladder count (${ladders})`);
+  if(hazards<20)issues.push(`hazard coverage too low (${hazards})`);
+  if(crates<6)issues.push(`crate count too low (${crates})`);
+  if(issues.length)console.warn('Map validation warnings:',issues.join('; '));
 }
 
 // ── PHYSICS ───────────────────────────────────────────────────────────────────
@@ -290,7 +401,11 @@ function resetPlayer(){
      invincible:0,attackCooldown:0,attackBox:null,
      // Timestamp (in ms) when the next bomb throw becomes available.
      nextBombAtMs:0,
-     combo:0,comboTimer:0,crouching:false};
+     combo:0,comboTimer:0,crouching:false,
+     // Shadow stance: while holding down and perfectly still, KAGE blends in.
+     shadowMode:false,
+     // Turn-lean timer drives quick left/right pivot animation readability.
+     turnTimer:0,lastFacingDir:1};
 }
 
 function getBombCooldownRemainingMs(){
@@ -303,6 +418,7 @@ function canThrowBombNow(){
 
 function playerHit(dmg){
   if(P.invincible>0||P.shield>0)return;
+  P.shadowMode=false;
   P.health-=dmg;
   SFX.hurt();addShake(4+dmg*2);
   spawnPfx(P.x+PW/2,P.y+PH/2,7,'#ff6622');
@@ -412,24 +528,44 @@ function updatePlayer(){
   const moveRight=keys['ArrowRight'];
   const hasMoveInput=moveLeft||moveRight;
 
+  // Shadow ability: hold DOWN while stationary on ground to become unseen by NPC AI.
+  const wantsShadow=keys['ArrowDown']&&!hasMoveInput&&P.onGround&&!P.onLadder;
+  const canShadow=wantsShadow&&Math.abs(P.vx)<0.03&&Math.abs(P.vy)<0.03&&P.attackCooldown<=0;
+  P.shadowMode=!!canShadow;
+
   P.vx=0;
-  if(moveLeft){P.vx=-spd;P.dir=-1;}
-  if(moveRight){P.vx=spd;P.dir=1;}
+  if(moveLeft){P.vx=-spd;}
+  if(moveRight){P.vx=spd;}
+
+  if(P.vx!==0){
+    P.shadowMode=false;
+    const desiredDir=P.vx>0?1:-1;
+    if(desiredDir!==P.dir&&Math.abs(P.vx)>0.22)P.turnTimer=8;
+    P.dir=desiredDir;
+    P.lastFacingDir=desiredDir;
+  }else if(P.turnTimer>0){
+    P.turnTimer--;
+  }
 
   const wasOnGround=P.onGround;
   if((keys['ArrowUp']||keys['Space'])&&P.onGround){
     // Tune jump to be ~2x slower and ~half as high as the prior setup.
     const jumpImpulse=(6.5*Math.sqrt(2))*0.155;
+    P.shadowMode=false;
     P.vy=-jumpImpulse;P.onGround=false;P.state='jump';SFX.jump();
   }
 
   if(pressed['KeyZ']&&P.attackCooldown<=0){
+    P.shadowMode=false;
     P.state='kick';P.stateTimer=13;P.attackCooldown=22;pressed['KeyZ']=false;SFX.kick();
   }else if(pressed['KeyX']&&P.attackCooldown<=0){
+    P.shadowMode=false;
     P.state='punch';P.stateTimer=11;P.attackCooldown=18;pressed['KeyX']=false;SFX.punch();
   }else if(pressed['KeyC']&&P.attackCooldown<=0&&P.stars>0){
+    P.shadowMode=false;
     P.state='throw';P.stateTimer=10;P.attackCooldown=22;pressed['KeyC']=false;SFX.star();
   }else if(pressed['KeyB']&&P.attackCooldown<=0&&canThrowBombNow()&&(INFINITE_BOMBS||P.bombs>0)){
+    P.shadowMode=false;
     P.state='bomb_throw';P.stateTimer=12;P.attackCooldown=30;pressed['KeyB']=false;
     // Start cooldown as soon as the throw animation commits.
     P.nextBombAtMs=performance.now()+BOMB_COOLDOWN_MS;
@@ -437,6 +573,7 @@ function updatePlayer(){
 
   const prevOnGround=P.onGround;
   moveEntity(P);
+  if(!P.onGround)P.shadowMode=false;
   if(!prevOnGround&&P.onGround)SFX.land();
 
   if(!['kick','punch','throw','bomb_throw','hurt','climb'].includes(P.state)){
@@ -580,8 +717,9 @@ function spawnEnemies(){
     {y:33,g:[[5,9],[22,7],[48,8],[72,6],[95,7]],d:[[32,8],[65,9]],s:[[15],[55],[100]],h:[[38]]},
     {y:43,g:[[4,7],[30,7],[58,7],[82,5],[110,5]],d:[[18,8],[75,8]],s:[[44],[92]],h:[[65]]},
     {y:53,g:[[5,6],[28,7],[52,8],[75,6],[100,6]],d:[[16,8],[62,8],[95,7]],s:[[38],[84]],h:[[50],[90]]},
-    {y:63,g:[[5,7],[32,6],[62,6],[92,7]],d:[[20,8],[55,7],[85,8]],s:[[15],[48],[75],[105]],h:[[70]]},
-    {y:73,g:[[5,8],[45,7],[85,6]],d:[[25,8],[65,8]],s:[[35],[75]],h:[[55],[100]]},
+    // Underground population intentionally reduced for stealthy claustrophobic pacing.
+    {y:63,g:[[8,5],[88,5]],d:[[52,6]],s:[[104]],h:[]},
+    {y:73,g:[[12,5]],d:[[58,6]],s:[[92]],h:[[40]]},
   ];
 
   floors.forEach(def=>{
@@ -672,11 +810,12 @@ function updateEnemies(){
     const dy=(P.y+PH/2)-(e.y+e.h/2);
     const dist=Math.sqrt(dx*dx+dy*dy);
     const sameFloor=Math.abs(dy)<50;
+    const playerVisible=!P.shadowMode;
 
     if(e.type==='sniper'){
       e.dir=dx>0?1:-1;
       if(e.shootCooldown>0)e.shootCooldown--;
-      if(dist<200&&sameFloor&&e.shootCooldown<=0){
+      if(playerVisible&&dist<200&&sameFloor&&e.shootCooldown<=0){
         spawnBullet(e.x+(e.dir>0?e.w+2:-4),e.y+e.h*0.35,e.dir*5.2);
         SFX.shoot();e.shootCooldown=95+Math.random()*30;
       }
@@ -692,21 +831,21 @@ function updateEnemies(){
       const fx=e.dir>0?e.x+e.w+2:e.x-2;
       if(!isSolid(Math.floor(fx/TS),Math.floor((e.y+e.h+2)/TS))&&
          !isPlat(Math.floor(fx/TS),Math.floor((e.y+e.h+2)/TS))){e.dir*=-1;}
-      if(dist<CHASE_D&&sameFloor){e.state='chase';e.alertTimer=220;}
+      if(playerVisible&&dist<CHASE_D&&sameFloor){e.state='chase';e.alertTimer=220;}
     }else{
       e.alertTimer--;
       if(e.alertTimer<=0){e.state='patrol';return;}
-      if(dist<CHASE_D&&sameFloor)e.alertTimer=220;
-      if(sameFloor){e.vx=Math.sign(dx)*(sp*1.5);e.dir=Math.sign(dx)||e.dir;}
+      if(playerVisible&&dist<CHASE_D&&sameFloor)e.alertTimer=220;
+      if(playerVisible&&sameFloor){e.vx=Math.sign(dx)*(sp*1.5);e.dir=Math.sign(dx)||e.dir;}else{e.vx*=0.65;}
       // Guards shoot while chasing
       if(e.type==='guard'){
         if(e.shootCooldown>0)e.shootCooldown--;
-        if(dist<110&&sameFloor&&e.shootCooldown<=0){
+        if(playerVisible&&dist<110&&sameFloor&&e.shootCooldown<=0){
           spawnBullet(e.x+(e.dir>0?e.w+2:-4),e.y+8,e.dir*4.5);
           SFX.shoot();e.shootCooldown=130;
         }
       }
-      if(dist<ATK_D+e.w&&sameFloor&&e.stateTimer<=0){
+      if(playerVisible&&dist<ATK_D+e.w&&sameFloor&&e.stateTimer<=0){
         e.stateTimer=35;playerHit(e.type==='heavy'?2:1);
       }
     }
@@ -770,11 +909,60 @@ function updatePfx(){
 
 // ── CAMERA ────────────────────────────────────────────────────────────────────
 let camX=0,camY=0;
+// Sectioned camera model: horizontal chunks with limited side-scroll plus
+// full-screen vertical paging to emulate classic Saboteur-style room traversal.
+const SECTION_TILE_W=40;
+const SECTION_COUNT_X=Math.ceil(MW/SECTION_TILE_W);
+const PAGE_H=VH;
+let currentSectionCol=0;
+let currentSectionRow=0;
+
 function updateCamera(){
-  const tx=P.x+PW/2-VW/2,ty=P.y+PH/2-VH/2+10;
-  camX+=(tx-camX)*0.12;camY+=(ty-camY)*0.12;
-  camX=Math.max(0,Math.min(camX,MW*TS-VW));
-  camY=Math.max(0,Math.min(camY,MH*TS-VH));
+  const px=P.x+PW/2,py=P.y+PH/2;
+  const worldW=MW*TS,worldH=MH*TS;
+
+  // Determine which horizontal section and vertical page the player belongs to.
+  const nextCol=Math.max(0,Math.min(SECTION_COUNT_X-1,Math.floor(px/(SECTION_TILE_W*TS))));
+  const maxRow=Math.max(0,Math.floor((worldH-1)/PAGE_H));
+  const nextRow=Math.max(0,Math.min(maxRow,Math.floor(py/PAGE_H)));
+
+  // Snap section/page changes quickly so transitions feel intentional.
+  if(nextCol!==currentSectionCol){currentSectionCol=nextCol;}
+  if(nextRow!==currentSectionRow){currentSectionRow=nextRow;}
+
+  const secLeft=currentSectionCol*SECTION_TILE_W*TS;
+  const secRight=Math.min(worldW,secLeft+SECTION_TILE_W*TS);
+  const secWidth=secRight-secLeft;
+
+  // Center on player but keep camera constrained to the current horizontal section.
+  let tx=px-VW/2;
+  const secMin=secLeft;
+  const secMax=Math.max(secMin,secRight-VW);
+  tx=Math.max(secMin,Math.min(tx,secMax));
+
+  // If section narrower than viewport (edge-case), lock to section start.
+  if(secWidth<=VW)tx=secLeft;
+
+  // Vertical paging is full-screen increments, with slight follow smoothing inside page.
+  const pageTop=currentSectionRow*PAGE_H;
+  const pageBottom=Math.min(worldH,pageTop+PAGE_H);
+  let ty=pageTop;
+  if(pageBottom-pageTop>VH){
+    const inPageFollow=Math.max(pageTop,Math.min(py-VH/2,pageBottom-VH));
+    ty=inPageFollow;
+  }
+
+  camX+=(tx-camX)*0.2;
+  camY+=(ty-camY)*0.24;
+
+  // Fix standing jitter: when near target and player not moving intentionally,
+  // snap camera directly to target to eliminate subpixel shimmer.
+  const still=(!keys['ArrowLeft']&&!keys['ArrowRight']&&Math.abs(P.vx)<0.03&&P.onGround);
+  if(still&&Math.abs(tx-camX)<0.6)camX=tx;
+  if(Math.abs(ty-camY)<0.6)camY=ty;
+
+  camX=Math.max(0,Math.min(camX,worldW-VW));
+  camY=Math.max(0,Math.min(camY,worldH-VH));
 }
 
 // ── TILE DRAWING ──────────────────────────────────────────────────────────────
@@ -783,13 +971,14 @@ function drawTile(tx,ty,sx,sy){
   const t=getT(tx,ty);if(t===T_EMPTY)return;
   switch(t){
     case T_SOLID:{
-      ctx.fillStyle='#4a1808';ctx.fillRect(sx,sy,TS,TS);
-      ctx.fillStyle='#250a02';ctx.fillRect(sx,sy,TS,1);ctx.fillRect(sx,sy,1,TS);
-      ctx.fillStyle='#6e2c1a';
+      const caveTone=ty>=58;
+      ctx.fillStyle=caveTone?'#10233f':'#4a1808';ctx.fillRect(sx,sy,TS,TS);
+      ctx.fillStyle=caveTone?'#091427':'#250a02';ctx.fillRect(sx,sy,TS,1);ctx.fillRect(sx,sy,1,TS);
+      ctx.fillStyle=caveTone?'#1d3d66':'#6e2c1a';
       const row=ty%2,off=row?8:0;
       ctx.fillRect(sx+1+off,sy+2,6,5);ctx.fillRect(sx+9+off,sy+2,5,5);
       ctx.fillRect(sx+1+(8-off),sy+9,7,5);ctx.fillRect(sx+9+(off?0:8)%16,sy+9,5,5);
-      if(getT(tx,ty-1)!==T_SOLID){ctx.fillStyle='#8a4428';ctx.fillRect(sx,sy,TS,2);}
+      if(getT(tx,ty-1)!==T_SOLID){ctx.fillStyle=caveTone?'#2f5b8f':'#8a4428';ctx.fillRect(sx,sy,TS,2);}
       break;
     }
     case T_PLAT:{
@@ -808,11 +997,12 @@ function drawTile(tx,ty,sx,sy){
       break;
     }
     case T_WATER:{
-      ctx.fillStyle='#060c2a';ctx.fillRect(sx,sy,TS,TS);
+      const caveWater=ty>=58;
+      ctx.fillStyle=caveWater?'#040d22':'#060c2a';ctx.fillRect(sx,sy,TS,TS);
       const wv=Math.sin(tick*0.07+tx*0.7)*1.5;
-      ctx.fillStyle='#0a2060';ctx.fillRect(sx,sy+wv,TS,3);ctx.fillRect(sx,sy+wv+6,TS,2);
-      ctx.fillStyle='rgba(15,50,160,0.25)';ctx.fillRect(sx,sy,TS,TS);
-      ctx.fillStyle='rgba(80,160,255,0.1)';ctx.fillRect(sx,sy,TS,2);
+      ctx.fillStyle=caveWater?'#113a88':'#0a2060';ctx.fillRect(sx,sy+wv,TS,3);ctx.fillRect(sx,sy+wv+6,TS,2);
+      ctx.fillStyle=caveWater?'rgba(35,90,200,0.28)':'rgba(15,50,160,0.25)';ctx.fillRect(sx,sy,TS,TS);
+      ctx.fillStyle=caveWater?'rgba(140,200,255,0.15)':'rgba(80,160,255,0.1)';ctx.fillRect(sx,sy,TS,2);
       break;
     }
     case T_SPIKE:{
@@ -853,9 +1043,9 @@ function drawTile(tx,ty,sx,sy){
 
 function drawMap(){
   const outsideView=camY<120;
-  // Background gradient — deeper = darker/redder (underground)
+  // Background gradient — deeper areas shift to dark blue cavern tones.
   const depth=Math.min(1,camY/(MH*TS));
-  const r=Math.floor(depth*12),g2=Math.floor(depth*3),b=Math.floor(22-depth*20);
+  const r=Math.floor(4+depth*2),g2=Math.floor(8+depth*12),b=Math.floor(18+depth*26);
   ctx.fillStyle=`rgb(${r},${g2},${b})`;ctx.fillRect(0,0,VW,VH);
 
   // Distant parallax skyline (only visible near roof / outside areas).
@@ -940,6 +1130,10 @@ function drawNinja(sx,sy,dir,state,inv,t){
   ctx.save();ctx.translate(sx+(dir<0?PW:0),sy);if(dir<0)ctx.scale(-1,1);
   // Slower animation sampling so running cycles feel less rushed.
   const fr=t>>4;
+  const runAnimating=state==='run'&&(keys['ArrowLeft']||keys['ArrowRight']);
+  // Left/right body lean creates readable momentum and direction changes.
+  const lean=runAnimating?Math.max(-2,Math.min(2,P.vx*1.35)):0;
+  const bob=runAnimating?((fr%2)?1:0):0;
 
   // Shield aura
   if(P.shield>0){
@@ -950,6 +1144,23 @@ function drawNinja(sx,sy,dir,state,inv,t){
 
   // Shadow
   ctx.fillStyle='rgba(0,0,0,0.25)';ctx.fillRect(1,PH+1,PW-2,2);
+
+  if(P.shadowMode){
+    // Shadow stance renders KAGE as a dim silhouette to signal stealth state.
+    ctx.globalAlpha=0.45+Math.sin(t*0.2)*0.08;
+    ctx.fillStyle='#0d1a2a';ctx.fillRect(1,2,10,17);
+    ctx.fillStyle='rgba(120,170,230,0.28)';ctx.fillRect(3,4,6,9);
+    ctx.fillStyle='rgba(170,210,255,0.3)';ctx.fillRect(6,6,2,1);
+    ctx.globalAlpha=1;
+    return ctx.restore();
+  }
+
+  // Sprint streaks communicate strong left/right motion without heavy particles.
+  if(runAnimating&&Math.abs(P.vx)>1.55){
+    const tail=-2;
+    ctx.fillStyle='rgba(170,220,255,0.35)';ctx.fillRect(tail,10+(fr%2),3,1);
+    ctx.fillStyle='rgba(255,255,255,0.22)';ctx.fillRect(tail-2,12-((fr+1)%2),2,1);
+  }
 
   if(state==='duck'||state==='crawl'){
     const crawlStep=state==='crawl'?(fr%4<2?0:1):0;
@@ -1022,20 +1233,24 @@ function drawNinja(sx,sy,dir,state,inv,t){
   }
 
   // Body
-  ctx.fillStyle='#111';ctx.fillRect(1,6,10,9);
-  ctx.fillStyle='#1a1a1a';ctx.fillRect(3,7,3,4);ctx.fillRect(7,7,3,4);
-  ctx.fillStyle='#333';ctx.fillRect(1,12,10,2);ctx.fillStyle='#888';ctx.fillRect(4,12,4,2);
+  const torsoX=1+Math.round(lean*0.6);
+  const torsoY=6+bob;
+  ctx.fillStyle='#111';ctx.fillRect(torsoX,torsoY,10,9);
+  ctx.fillStyle='#1a1a1a';ctx.fillRect(torsoX+2,torsoY+1,3,4);ctx.fillRect(torsoX+6,torsoY+1,3,4);
+  ctx.fillStyle='#333';ctx.fillRect(torsoX,torsoY+6,10,2);ctx.fillStyle='#888';ctx.fillRect(torsoX+3,torsoY+6,4,2);
+  if(P.turnTimer>0&&state==='run'){
+    ctx.fillStyle='rgba(120,220,255,0.35)';ctx.fillRect(torsoX-1,torsoY+2,12,1);
+  }
 
   // Arms
   ctx.fillStyle='#111';
-  const runAnimating=state==='run'&&Math.abs(P.vx)>0.08;
   const aSwing=runAnimating?(fr%2?2:-2):0;
-  ctx.fillRect(-2,6+aSwing,3,7);ctx.fillRect(PW-1,6-aSwing,3,7);
-  ctx.fillStyle='#c8996a';ctx.fillRect(-2,11+aSwing,3,2);ctx.fillRect(PW-1,11-aSwing,3,2);
+  ctx.fillRect(-2,6+bob+aSwing,3,7);ctx.fillRect(PW-1,6+bob-aSwing,3,7);
+  ctx.fillStyle='#c8996a';ctx.fillRect(-2,11+bob+aSwing,3,2);ctx.fillRect(PW-1,11+bob-aSwing,3,2);
 
   // Scarf
-  ctx.fillStyle='#cc0000';ctx.fillRect(0,5,12,3);
-  if(runAnimating||state==='jump'){ctx.fillStyle='#aa0000';ctx.fillRect(-2,5,3,2);}
+  ctx.fillStyle='#cc0000';ctx.fillRect(0,5+bob,12,3);
+  if(runAnimating||state==='jump'){ctx.fillStyle='#aa0000';ctx.fillRect(-2,5+bob+(fr%2),3,2);}
 
   // Head
   ctx.fillStyle='#c8996a';ctx.fillRect(2,0,8,6);
@@ -1052,34 +1267,43 @@ function drawGuard(sx,sy,dir,state,hp,maxHp,t){
   if(state==='dead')return;
   ctx.save();ctx.translate(sx+(dir<0?12:0),sy);if(dir<0)ctx.scale(-1,1);
   const fr=t>>3,hurt=state==='hurt'&&(t>>1)&1;
+  const chasing=state==='chase';
+  // Breathing and alert bounce make enemies feel alive even while idle.
+  const bodyBob=state==='patrol'||state==='chase'?Math.sin(t*0.24)*0.5:Math.sin(t*0.12)*0.35;
 
   ctx.fillStyle='rgba(0,0,0,0.22)';ctx.fillRect(1,21,10,2);
 
+  // Legs with clearer alternating gait while patrolling/chasing.
   const lr=state==='patrol'||state==='chase'?fr%2:0;
-  ctx.fillStyle='#0a1844';ctx.fillRect(2,15,4,5+(lr?3:0));ctx.fillRect(7,15,4,5+(lr?0:3));
-  ctx.fillStyle='#111';ctx.fillRect(2,19+(lr?4:0),4,1);ctx.fillRect(7,19+(lr?0:4),4,1);
+  ctx.fillStyle=hurt?'#331111':'#0a1844';
+  ctx.fillRect(2,15+Math.round(bodyBob),4,5+(lr?3:0));ctx.fillRect(7,15+Math.round(bodyBob),4,5+(lr?0:3));
+  ctx.fillStyle='#111';ctx.fillRect(2,19+(lr?4:0)+Math.round(bodyBob),4,1);ctx.fillRect(7,19+(lr?0:4)+Math.round(bodyBob),4,1);
 
+  // Torso armor + tactical chest light.
   const bc=hurt?'#ff4433':'#183888';
-  ctx.fillStyle=bc;ctx.fillRect(1,5,10,10);
-  ctx.fillStyle=hurt?'#ff5544':'#1048aa';ctx.fillRect(3,6,6,6);
-  ctx.fillStyle='#0a2866';ctx.fillRect(3,8,2,3);ctx.fillRect(7,8,2,3);
-  ctx.fillStyle=bc;ctx.fillRect(-2,6,4,7);ctx.fillRect(10,6,4,7);
-  ctx.fillStyle='#222';ctx.fillRect(-2,11,4,2);ctx.fillRect(10,11,4,2);
+  ctx.fillStyle=bc;ctx.fillRect(1,5+Math.round(bodyBob),10,10);
+  ctx.fillStyle=hurt?'#ff5544':'#1048aa';ctx.fillRect(3,6+Math.round(bodyBob),6,6);
+  ctx.fillStyle='#0a2866';ctx.fillRect(3,8+Math.round(bodyBob),2,3);ctx.fillRect(7,8+Math.round(bodyBob),2,3);
+  ctx.fillStyle=(chasing&&((t>>2)&1))?'#ff3344':'#66c8ff';ctx.fillRect(5,10+Math.round(bodyBob),2,1);
 
-  // Rifle
-  ctx.fillStyle='#1a1a1a';ctx.fillRect(12,8,10,3);
-  ctx.fillStyle='#111';ctx.fillRect(18,7,4,3);
-  ctx.fillStyle='#333';ctx.fillRect(12,9,6,4);
+  // Arms + rifle with animated muzzle sensor light.
+  const armRaise=chasing?1:0;
+  ctx.fillStyle=bc;ctx.fillRect(-2,6+Math.round(bodyBob)-armRaise,4,7);ctx.fillRect(10,6+Math.round(bodyBob)-armRaise,4,7);
+  ctx.fillStyle='#222';ctx.fillRect(-2,11+Math.round(bodyBob)-armRaise,4,2);ctx.fillRect(10,11+Math.round(bodyBob)-armRaise,4,2);
+  ctx.fillStyle='#1a1a1a';ctx.fillRect(12,8+Math.round(bodyBob)-armRaise,10,3);
+  ctx.fillStyle='#111';ctx.fillRect(18,7+Math.round(bodyBob)-armRaise,4,3);
+  ctx.fillStyle='#333';ctx.fillRect(12,9+Math.round(bodyBob)-armRaise,6,4);
+  ctx.fillStyle=chasing?'#ffbb33':'#33ffaa';ctx.fillRect(21,8+Math.round(bodyBob)-armRaise,1,1);
 
-  // Helmet
+  // Helmet + visor shine scan.
   const hc=hurt?'#ff3322':'#1030bb';
-  ctx.fillStyle=hc;ctx.fillRect(0,0,12,7);ctx.fillRect(-1,3,14,3);
-  ctx.fillStyle='#050e30';ctx.fillRect(1,2,10,3);
-  ctx.fillStyle='rgba(80,140,255,0.2)';ctx.fillRect(1,2,10,1);
-  ctx.fillStyle='#2040cc';ctx.fillRect(4,0,4,1);
-  ctx.fillStyle='#c8996a';ctx.fillRect(2,5,8,4);
-  ctx.fillStyle='#333';ctx.fillRect(5,6,4,2);
-  ctx.fillStyle='#fff';ctx.fillRect(5,6,2,1);ctx.fillRect(8,6,1,1);
+  ctx.fillStyle=hc;ctx.fillRect(0,0+Math.round(bodyBob),12,7);ctx.fillRect(-1,3+Math.round(bodyBob),14,3);
+  ctx.fillStyle='#050e30';ctx.fillRect(1,2+Math.round(bodyBob),10,3);
+  ctx.fillStyle=((t>>3)&1)?'rgba(120,190,255,0.26)':'rgba(80,140,255,0.12)';ctx.fillRect(1,2+Math.round(bodyBob),10,1);
+  ctx.fillStyle='#2040cc';ctx.fillRect(4,0+Math.round(bodyBob),4,1);
+  ctx.fillStyle='#c8996a';ctx.fillRect(2,5+Math.round(bodyBob),8,4);
+  ctx.fillStyle='#333';ctx.fillRect(5,6+Math.round(bodyBob),4,2);
+  ctx.fillStyle='#fff';ctx.fillRect(5,6+Math.round(bodyBob),2,1);ctx.fillRect(8,6+Math.round(bodyBob),1,1);
   ctx.restore();
   if(hp<maxHp){
     ctx.fillStyle='#300';ctx.fillRect(sx,sy-4,12,2);
@@ -1092,28 +1316,37 @@ function drawHeavy(sx,sy,dir,state,hp,maxHp,t){
   if(state==='dead')return;
   ctx.save();ctx.translate(sx+(dir<0?16:0),sy);if(dir<0)ctx.scale(-1,1);
   const fr=t>>3,hurt=state==='hurt'&&(t>>1)&1;
+  const chasing=state==='chase';
+  // Heavy units feel weighty via slower bob and larger stride phase.
+  const bodyBob=Math.sin(t*0.16)*0.45;
 
   ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fillRect(2,27,12,2);
   const lr=state==='patrol'||state==='chase'?fr%2:0;
   const dc=hurt?'#ff2200':'#222244';
-  ctx.fillStyle=dc;ctx.fillRect(1,18,6,8+(lr?3:0));ctx.fillRect(9,18,6,8+(lr?0:3));
-  ctx.fillStyle='#111';ctx.fillRect(1,25+(lr?4:0),6,1);ctx.fillRect(9,25+(lr?0:4),6,1);
+  ctx.fillStyle=dc;ctx.fillRect(1,18+Math.round(bodyBob),6,8+(lr?3:0));ctx.fillRect(9,18+Math.round(bodyBob),6,8+(lr?0:3));
+  ctx.fillStyle='#111';ctx.fillRect(1,25+(lr?4:0)+Math.round(bodyBob),6,1);ctx.fillRect(9,25+(lr?0:4)+Math.round(bodyBob),6,1);
 
-  ctx.fillStyle=dc;ctx.fillRect(0,5,16,14);
-  ctx.fillStyle=hurt?'#ff4400':'#1a1a55';ctx.fillRect(2,6,12,10);
-  ctx.fillStyle='#333366';ctx.fillRect(4,7,8,3);ctx.fillRect(4,12,8,3);
-  ctx.fillStyle='#ff4400';ctx.fillRect(6,9,4,2);
-  ctx.fillStyle=dc;ctx.fillRect(-3,6,5,10);ctx.fillRect(14,6,5,10);
-  ctx.fillStyle='#111';ctx.fillRect(-3,14,5,3);ctx.fillRect(14,14,5,3);
-  // Minigun
-  ctx.fillStyle='#1a1a1a';ctx.fillRect(17,8,12,5);
-  ctx.fillStyle='#333';ctx.fillRect(22,7,7,4);
-  ctx.fillStyle='#555';ctx.fillRect(17,9,5,2);
-  // Riot helmet
-  ctx.fillStyle=hurt?'#ff3300':'#111133';ctx.fillRect(-1,0,18,7);ctx.fillRect(-2,3,20,3);
-  ctx.fillStyle='#ff4400';ctx.fillRect(1,2,14,3);
-  ctx.fillStyle='rgba(255,80,0,0.3)';ctx.fillRect(1,2,14,1);
-  ctx.fillStyle='#fff';ctx.fillRect(6,2,2,1);ctx.fillRect(10,2,2,1);
+  ctx.fillStyle=dc;ctx.fillRect(0,5+Math.round(bodyBob),16,14);
+  ctx.fillStyle=hurt?'#ff4400':'#1a1a55';ctx.fillRect(2,6+Math.round(bodyBob),12,10);
+  ctx.fillStyle='#333366';ctx.fillRect(4,7+Math.round(bodyBob),8,3);ctx.fillRect(4,12+Math.round(bodyBob),8,3);
+  // Reactor core pulses while chasing to telegraph danger.
+  ctx.fillStyle=chasing&&((t>>2)&1)?'#ffd166':'#ff4400';ctx.fillRect(6,9+Math.round(bodyBob),4,2);
+  ctx.fillStyle=dc;ctx.fillRect(-3,6+Math.round(bodyBob),5,10);ctx.fillRect(14,6+Math.round(bodyBob),5,10);
+  ctx.fillStyle='#111';ctx.fillRect(-3,14+Math.round(bodyBob),5,3);ctx.fillRect(14,14+Math.round(bodyBob),5,3);
+
+  // Multi-barrel minigun spin effect uses alternating ring highlights.
+  ctx.fillStyle='#1a1a1a';ctx.fillRect(17,8+Math.round(bodyBob),12,5);
+  ctx.fillStyle='#333';ctx.fillRect(22,7+Math.round(bodyBob),7,4);
+  ctx.fillStyle='#555';ctx.fillRect(17,9+Math.round(bodyBob),5,2);
+  const spin=fr%3;
+  ctx.fillStyle=spin===0?'#888':spin===1?'#666':'#444';
+  ctx.fillRect(27,8+Math.round(bodyBob),2,4);
+
+  // Riot helmet + animated visor reflection.
+  ctx.fillStyle=hurt?'#ff3300':'#111133';ctx.fillRect(-1,0+Math.round(bodyBob),18,7);ctx.fillRect(-2,3+Math.round(bodyBob),20,3);
+  ctx.fillStyle='#ff4400';ctx.fillRect(1,2+Math.round(bodyBob),14,3);
+  ctx.fillStyle=((t>>2)&1)?'rgba(255,190,120,0.38)':'rgba(255,80,0,0.2)';ctx.fillRect(1,2+Math.round(bodyBob),14,1);
+  ctx.fillStyle='#fff';ctx.fillRect(6,2+Math.round(bodyBob),2,1);ctx.fillRect(10,2+Math.round(bodyBob),2,1);
   ctx.restore();
   if(hp<maxHp){
     ctx.fillStyle='#300';ctx.fillRect(sx,sy-5,16,3);
@@ -1126,24 +1359,32 @@ function drawHeavy(sx,sy,dir,state,hp,maxHp,t){
 function drawSniper(sx,sy,dir,state,hp,maxHp,t){
   if(state==='dead')return;
   ctx.save();ctx.translate(sx+(dir<0?10:0),sy);if(dir<0)ctx.scale(-1,1);
-  const hurt=state==='hurt'&&(t>>1)&1;
+  const fr=t>>3,hurt=state==='hurt'&&(t>>1)&1;
+  const chasing=state==='chase';
+  const crouchBob=Math.sin(t*0.19)*0.35;
 
   ctx.fillStyle='rgba(0,0,0,0.22)';ctx.fillRect(1,23,8,2);
   ctx.fillStyle=hurt?'#ff3300':'#1a3a1a';
-  ctx.fillRect(0,16,10,6);ctx.fillRect(1,20,4,4);ctx.fillRect(6,20,4,4);
-  ctx.fillRect(1,7,8,10);
-  ctx.fillStyle='#2a4a2a';ctx.fillRect(2,8,3,4);ctx.fillRect(6,8,3,4);
-  ctx.fillStyle='#0a2a0a';ctx.fillRect(3,12,4,3);
-  ctx.fillStyle=hurt?'#ff3300':'#1a3a1a';ctx.fillRect(-2,8,4,6);ctx.fillRect(8,8,4,6);
-  // Rifle
-  ctx.fillStyle='#1a1a1a';ctx.fillRect(8,9,18,3);
-  ctx.fillStyle='#333';ctx.fillRect(22,8,4,5);
-  ctx.fillStyle='#111';ctx.fillRect(24,8,1,1);ctx.fillRect(24,12,1,1);
-  // Head ghillie
-  ctx.fillStyle=hurt?'#ff3300':'#2a4a2a';ctx.fillRect(0,1,10,8);
-  ctx.fillStyle='#1a3a1a';ctx.fillRect(1,0,8,4);
-  ctx.fillStyle='#c8996a';ctx.fillRect(2,4,6,4);ctx.fillStyle='#333';ctx.fillRect(3,5,4,2);ctx.fillStyle='#fff';ctx.fillRect(3,5,2,1);
-  ctx.fillStyle='#2a5a2a';ctx.fillRect(-1,0,2,3);ctx.fillRect(9,0,2,3);ctx.fillRect(3,0,2,2);
+  ctx.fillRect(0,16+Math.round(crouchBob),10,6);ctx.fillRect(1,20+Math.round(crouchBob),4,4);ctx.fillRect(6,20+Math.round(crouchBob),4,4);
+  ctx.fillRect(1,7+Math.round(crouchBob),8,10);
+  ctx.fillStyle='#2a4a2a';ctx.fillRect(2,8+Math.round(crouchBob),3,4);ctx.fillRect(6,8+Math.round(crouchBob),3,4);
+  ctx.fillStyle='#0a2a0a';ctx.fillRect(3,12+Math.round(crouchBob),4,3);
+  ctx.fillStyle=hurt?'#ff3300':'#1a3a1a';ctx.fillRect(-2,8+Math.round(crouchBob),4,6);ctx.fillRect(8,8+Math.round(crouchBob),4,6);
+
+  // Long rifle gains subtle recoil tick + scope glint pulse.
+  const recoil=chasing&&((t>>2)&1)?1:0;
+  ctx.fillStyle='#1a1a1a';ctx.fillRect(8+recoil,9+Math.round(crouchBob),18,3);
+  ctx.fillStyle='#333';ctx.fillRect(22+recoil,8+Math.round(crouchBob),4,5);
+  ctx.fillStyle='#111';ctx.fillRect(24+recoil,8+Math.round(crouchBob),1,1);ctx.fillRect(24+recoil,12+Math.round(crouchBob),1,1);
+  ctx.fillStyle=((t>>2)&1)?'#ff3355':'#66ffcc';ctx.fillRect(21+recoil,9+Math.round(crouchBob),1,1);
+
+  // Head ghillie with animated fiber tufts.
+  ctx.fillStyle=hurt?'#ff3300':'#2a4a2a';ctx.fillRect(0,1+Math.round(crouchBob),10,8);
+  ctx.fillStyle='#1a3a1a';ctx.fillRect(1,0+Math.round(crouchBob),8,4);
+  ctx.fillStyle='#c8996a';ctx.fillRect(2,4+Math.round(crouchBob),6,4);
+  ctx.fillStyle='#333';ctx.fillRect(3,5+Math.round(crouchBob),4,2);ctx.fillStyle='#fff';ctx.fillRect(3,5+Math.round(crouchBob),2,1);
+  const tuft=fr%2;
+  ctx.fillStyle='#2a5a2a';ctx.fillRect(-1,0+Math.round(crouchBob),2,3+tuft);ctx.fillRect(9,0+Math.round(crouchBob),2,3+(1-tuft));ctx.fillRect(3,0+Math.round(crouchBob),2,2+tuft);
   ctx.restore();
   if(hp<maxHp){
     ctx.fillStyle='#300';ctx.fillRect(sx,sy-4,10,2);
@@ -1156,26 +1397,42 @@ function drawDog(sx,sy,dir,state,t){
   if(state==='dead')return;
   ctx.save();ctx.translate(sx+(dir<0?14:0),sy);if(dir<0)ctx.scale(-1,1);
   const fr=t>>3,hurt=state==='hurt'&&(t>>1)&1;
+  const chasing=state==='chase';
 
   ctx.fillStyle='rgba(0,0,0,0.18)';ctx.fillRect(2,12,10,2);
-  const la=fr%4;
+  // Four-leg gallop pattern improves readability when chasing.
+  const gait=fr%4;
+  const legHeights=chasing?
+    [gait===0?5:3,gait===1?5:3,gait===2?5:3,gait===3?5:3]:
+    [4,3,4,3];
   ctx.fillStyle=hurt?'#ff6622':'#4a2808';
-  [[1,7],[4,7],[7,7],[10,7]].forEach(([lx,ly],i)=>ctx.fillRect(lx,ly,2,i%2===la%2?5:3));
+  [[1,7],[4,7],[7,7],[10,7]].forEach(([lx,ly],i)=>ctx.fillRect(lx,ly,2,legHeights[i]));
+
+  // Torso and spine stripe for better silhouette.
   ctx.fillStyle=hurt?'#ff8844':'#6a3810';ctx.fillRect(2,3,10,6);
   ctx.fillStyle=hurt?'#ff6622':'#4a2808';ctx.fillRect(3,4,8,4);
-  // Head
-  ctx.fillStyle=hurt?'#ff8844':'#6a3810';ctx.fillRect(9,0,5,5);ctx.fillRect(11,3,5,3);
-  ctx.fillStyle='#111';ctx.fillRect(14,3,2,2);
+  ctx.fillStyle='#8a4a14';ctx.fillRect(4,3,6,1);
+
+  // Head + animated jaw (open wider while chasing).
+  const jawDrop=chasing?((t>>2)&1):0;
+  ctx.fillStyle=hurt?'#ff8844':'#6a3810';ctx.fillRect(9,0,5,5);ctx.fillRect(11,3+jawDrop,5,3);
+  ctx.fillStyle='#111';ctx.fillRect(14,3+jawDrop,2,2);
   ctx.fillStyle='#fff';ctx.fillRect(10,1,2,2);
-  ctx.fillStyle='#f00';ctx.fillRect(10,1,1,1); // red eye
+  ctx.fillStyle=chasing&&((t>>2)&1)?'#ff4444':'#f00';ctx.fillRect(10,1,1,1); // red eye pulse
   ctx.fillStyle='#4a2808';ctx.fillRect(9,0,2,3);
-  ctx.fillStyle='#fff';ctx.fillRect(12,5,1,2);ctx.fillRect(14,5,1,2);
-  // Tail
+  ctx.fillStyle='#fff';ctx.fillRect(12,5+jawDrop,1,2);ctx.fillRect(14,5+jawDrop,1,2);
+
+  // Tail wagging becomes sharper during chase.
   ctx.fillStyle='#6a3810';
-  if(state==='patrol'){ctx.fillRect(-2,1,3,2);}
-  else{ctx.fillRect(-3,-1,3,2);ctx.fillRect(-1,1,2,2);}
-  // Collar
-  ctx.fillStyle='#880000';ctx.fillRect(9,4,5,2);ctx.fillStyle='#ff0000';ctx.fillRect(11,4,1,2);
+  if(state==='patrol'){
+    ctx.fillRect(-2,1+(gait%2),3,2);
+  }else{
+    ctx.fillRect(-3,-1+(gait%2),3,2);ctx.fillRect(-1,1,2,2);
+  }
+
+  // Collar + blinking tracker LED.
+  ctx.fillStyle='#880000';ctx.fillRect(9,4,5,2);
+  ctx.fillStyle=((t>>2)&1)?'#ff3344':'#ff0000';ctx.fillRect(11,4,1,2);
   ctx.restore();
 }
 
@@ -1328,6 +1585,9 @@ function drawHUD(){
   // Inline cooldown status acts as a compact tooltip for bomb availability.
   ctx.fillStyle=bombReady?'#44ff66':'#ff8844';
   ctx.fillText(bombReady?'RDY':(bombCooldownRemainingMs/1000).toFixed(1)+'s',52,VH-8);
+  ctx.fillStyle='#1b1b1b';ctx.fillRect(28,VH-4,36,2);
+  const coolFrac=1-(bombCooldownRemainingMs/BOMB_COOLDOWN_MS);
+  ctx.fillStyle=bombReady?'#44ff88':'#ffaa44';ctx.fillRect(28,VH-4,Math.max(0,Math.floor(36*coolFrac)),2);
 
   // Lives
   ctx.fillStyle='#666';ctx.fillText('x',52,VH-18);
@@ -1359,6 +1619,9 @@ function drawHUD(){
     ctx.fillText('REACH THE HELICOPTER ON THE ROOF!',132,VH-18);
   }
   ctx.fillStyle='#444';ctx.fillText('FLOOR '+(Math.min(7,Math.floor(P.y/(TS*10))+1)),132,VH-8);
+  // Zone badge clarifies current section/page in room-based traversal mode.
+  const zone='ZONE '+String.fromCharCode(65+currentSectionCol)+'-'+(currentSectionRow+1);
+  ctx.fillStyle='#5d7384';ctx.fillText(zone,176,VH-28);
 
   // Active powerups
   if(P.shield>0){
@@ -1366,6 +1629,7 @@ function drawHUD(){
     ctx.fillStyle='rgba(68,136,255,0.5)';ctx.fillRect(0,0,Math.ceil(VW*P.shield/300),1);
   }
   if(P.speedBoost>0){ctx.fillStyle='#88ffff';ctx.fillText('SPEED',212,VH-8);}
+  if(P.shadowMode){ctx.fillStyle=(tick>>2)&1?'#8fb8ff':'#5b7fd1';ctx.fillText('SHADOW',246,VH-8);}
 
   // Combo
   if(P.combo>=2&&P.comboTimer>0){
@@ -1385,6 +1649,152 @@ function drawHUD(){
   ctx.fillRect(mini.x+Math.floor(94/MW*mini.w),mini.y+Math.floor(4/MH*mini.h),2,1);
   if(!P.hasDisk){ctx.fillStyle='#00ccff';ctx.fillRect(mini.x+Math.floor(53/MW*mini.w),mini.y+Math.floor(33/MH*mini.h),2,1);}
   if(!P.hasKeycard){ctx.fillStyle='#44ff44';ctx.fillRect(mini.x+Math.floor(90/MW*mini.w),mini.y+Math.floor(23/MH*mini.h),2,1);}
+}
+
+
+function drawRain(){
+  // Rain/scan pass adds motion and depth without expensive particle counts.
+  ctx.globalAlpha=0.32;
+  for(const drop of rain){
+    ctx.fillStyle=drop.c;
+    ctx.fillRect(Math.round(drop.x),Math.round(drop.y),1,drop.len);
+    ctx.fillRect(Math.round(drop.x-1),Math.round(drop.y+drop.len-1),1,1);
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawPauseOverlay(){
+  ctx.fillStyle='rgba(0,0,0,0.58)';ctx.fillRect(0,0,VW,VH);
+  ctx.fillStyle='#0d1a12';ctx.fillRect(VW/2-55,VH/2-20,110,40);
+  ctx.strokeStyle='#2bcf7f';ctx.strokeRect(VW/2-55.5,VH/2-20.5,111,41);
+  ctx.font='bold 8px monospace';ctx.fillStyle='#a8ffd6';ctx.fillText('PAUSED',VW/2-15,VH/2-4);
+  ctx.font='5px monospace';ctx.fillStyle='#7ec7a1';ctx.fillText('Press P or click Resume',VW/2-35,VH/2+10);
+}
+
+function drawHelpOverlay(){
+  ctx.fillStyle='rgba(0,0,0,0.74)';ctx.fillRect(10,10,VW-20,VH-20);
+  ctx.strokeStyle='#3f6780';ctx.strokeRect(10.5,10.5,VW-21,VH-21);
+  ctx.font='bold 6px monospace';ctx.fillStyle='#9bd5ff';ctx.fillText('QUICK OPS GUIDE',18,24);
+  ctx.font='5px monospace';
+  const lines=[
+    '🧭 Objective: collect DISK + KEYCARD, then reach rooftop helicopter.',
+    '⚔ Combat: Z/X/C attack, B throws a bomb when cooldown is ready.',
+    '🪜 Ladders: use UP/DOWN to climb slowly and reposition safely.',
+    '💡 Tip: hold DOWN while still to enter SHADOW and evade NPC detection.',
+    '⌨ P pause · H help · M mute. Use speed presets on title screen.'
+  ];
+  lines.forEach((line,i)=>{ctx.fillStyle=i===0?'#d8f0ff':'#9eb4c2';ctx.fillText(line,18,36+i*12);});
+}
+
+
+function drawCavernTorches(){
+  // Draw compact torch sprites only when the camera is deep enough underground.
+  if(camY<TS*50)return;
+  cavernTorches.forEach(ti=>{
+    const sx=Math.round(ti.x*TS-camX),sy=Math.round(ti.y*TS-camY);
+    if(sx<-10||sx>VW+10||sy<-20||sy>VH+20)return;
+    ctx.fillStyle='#3f2a14';ctx.fillRect(sx+7,sy+6,2,8);
+    const flick=0.55+Math.sin(tick*0.18+ti.flicker*6)*0.25;
+    ctx.fillStyle=flick>0.62?'#ffd27a':'#ff9f3a';ctx.fillRect(sx+6,sy+3,4,4);
+    ctx.fillStyle='#ff5f22';ctx.fillRect(sx+7,sy+2,2,2);
+  });
+}
+
+function drawBloomFX(){
+  // Lightweight additive bloom pass for bright gameplay elements.
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+
+  // Torch glow in caverns.
+  cavernTorches.forEach(ti=>{
+    const sx=Math.round(ti.x*TS+8-camX),sy=Math.round(ti.y*TS+6-camY);
+    if(sx<-32||sx>VW+32||sy<-32||sy>VH+32)return;
+    const r=18+Math.sin(tick*0.16+ti.flicker*4)*4;
+    const g=ctx.createRadialGradient(sx,sy,1,sx,sy,r);
+    g.addColorStop(0,'rgba(255,190,90,0.34)');
+    g.addColorStop(0.4,'rgba(255,110,40,0.2)');
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.fillRect(sx-r,sy-r,r*2,r*2);
+  });
+
+  // Player lantern-like personal glow keeps movement readable in dark regions.
+  const px=Math.round(P.x+PW/2-camX),py=Math.round(P.y+PH/2-camY);
+  const pg=ctx.createRadialGradient(px,py,2,px,py,52);
+  pg.addColorStop(0,'rgba(180,220,255,0.26)');pg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=pg;ctx.fillRect(px-52,py-52,104,104);
+
+  // Bright projectile effects get tiny bloom halos.
+  stars.forEach(st=>{
+    const sx=Math.round(st.x-camX),sy=Math.round(st.y-camY),r=10;
+    const g=ctx.createRadialGradient(sx,sy,1,sx,sy,r);
+    g.addColorStop(0,'rgba(255,245,140,0.4)');g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.fillRect(sx-r,sy-r,r*2,r*2);
+  });
+  bullets.forEach(b=>{
+    const sx=Math.round(b.x-camX),sy=Math.round(b.y-camY),r=8;
+    const g=ctx.createRadialGradient(sx,sy,1,sx,sy,r);
+    g.addColorStop(0,'rgba(255,180,80,0.35)');g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.fillRect(sx-r,sy-r,r*2,r*2);
+  });
+  ctx.restore();
+}
+
+function drawDarknessMask(){
+  // Deep underground: darken scene but preserve playable visibility with FOV cones.
+  const undergroundFactor=Math.max(0,Math.min(1,(camY-TS*44)/(TS*18)));
+  if(undergroundFactor<=0)return;
+
+  ctx.save();
+  // Keep ambient darkness readable; avoid over-black coverage.
+  const darkness=0.18+undergroundFactor*0.28;
+  ctx.fillStyle=`rgba(2,8,18,${darkness.toFixed(3)})`;
+  ctx.fillRect(0,0,VW,VH);
+
+  // Add subtle blue cave haze so dark areas are visible, not pure black.
+  const haze=ctx.createLinearGradient(0,0,0,VH);
+  haze.addColorStop(0,'rgba(20,38,70,0.06)');
+  haze.addColorStop(1,'rgba(8,20,44,0.16)');
+  ctx.fillStyle=haze;ctx.fillRect(0,0,VW,VH);
+
+  ctx.globalCompositeOperation='destination-out';
+
+  function punchLight(sx,sy,r,intensity=0.94){
+    const g=ctx.createRadialGradient(sx,sy,1,sx,sy,r);
+    g.addColorStop(0,`rgba(0,0,0,${intensity})`);
+    g.addColorStop(0.55,'rgba(0,0,0,0.45)');
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.fillRect(sx-r,sy-r,r*2,r*2);
+  }
+
+  function punchFovCone(sx,sy,dir){
+    // Directional field-of-view cone increases perceived vision range.
+    const len=88;
+    const halfW=42;
+    const tipX=sx+dir*len;
+    ctx.beginPath();
+    ctx.moveTo(sx,sy-6);
+    ctx.lineTo(tipX,sy-halfW);
+    ctx.lineTo(tipX,sy+halfW);
+    ctx.lineTo(sx,sy+6);
+    ctx.closePath();
+    const g=ctx.createLinearGradient(sx,sy,tipX,sy);
+    g.addColorStop(0,'rgba(0,0,0,0.75)');
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;
+    ctx.fill();
+  }
+
+  const px=Math.round(P.x+PW/2-camX),py=Math.round(P.y+PH/2-camY);
+  // Player carries strongest local light to keep controls intuitive.
+  punchLight(px,py,74,0.98);
+  punchFovCone(px,py,P.dir||1);
+
+  // Torches reveal cave corridors and create navigation breadcrumbs.
+  cavernTorches.forEach(ti=>punchLight(Math.round(ti.x*TS+8-camX),Math.round(ti.y*TS+8-camY),42,0.9));
+
+  // Exit pad receives extra illumination once objective is complete.
+  if(P.hasDisk&&P.hasKeycard)punchLight(Math.round(97*TS-camX),Math.round(4*TS-camY),52,0.9);
+  ctx.restore();
 }
 
 // ── VIGNETTE ──────────────────────────────────────────────────────────────────
@@ -1556,7 +1966,7 @@ function drawWin(){
 // ── INIT & MAIN LOOP ──────────────────────────────────────────────────────────
 let gameState='SPLASH';
 function initGame(){
-  buildMap();resetPlayer();spawnEnemies();spawnItems();
+  buildMap();validateMapLayout();resetPlayer();spawnEnemies();spawnItems();
   pfx=[];stars=[];bombs=[];bullets=[];camX=0;camY=0;
   simAccumulator=0;
   missionTimeLeftMs=20*60*1000;
@@ -1564,7 +1974,16 @@ function initGame(){
   missionTimeout=false;
   skylineOffsetX=0;
   prevCamX=camX;
+  currentSectionCol=0;
+  currentSectionRow=0;
   lastFrameMs=performance.now();
+  paused=false;
+  showHelp=false;
+  syncUiButtons();
+  rain=Array.from({length:72},()=>({
+    x:Math.random()*VW,y:Math.random()*VH,vx:0.9+Math.random()*0.7,vy:2.6+Math.random()*1.8,len:2+Math.floor(Math.random()*3),
+    c:Math.random()<0.2?'#88c8ff':'#4a6f93'
+  }));
   // Generate a small, fixed star field at the top of outside scenes.
   skyStars=Array.from({length:30},()=>({
     x:Math.floor(Math.random()*VW),
@@ -1599,6 +2018,27 @@ function loop(){
     ctx.restore();return;
   }
 
+  if(paused){
+    drawMap();
+    drawItems();
+    drawBombs();
+    drawBullets();
+    drawEnemies();
+    drawStars();
+    drawNinja(Math.round(P.x-camX),Math.round(P.y-camY),P.dir,P.state,P.invincible,tick);
+    drawPfx();
+    drawCavernTorches();
+    drawBloomFX();
+    drawRain();
+    drawDarknessMask();
+    drawVignette();
+    drawHUD();
+    drawPauseOverlay();
+    if(showHelp)drawHelpOverlay();
+    ctx.restore();
+    return;
+  }
+
   // Keep player physics at render cadence so jump arc/height stays identical
   // regardless of speed preset, while world simulation still time-scales.
   updatePlayer();
@@ -1628,6 +2068,7 @@ function loop(){
     updateMovPlats();
     simAccumulator-=1;
   }
+  updateRain();
 
   // Camera should always follow the player smoothly at display frame rate.
   updateCamera();
@@ -1644,8 +2085,13 @@ function loop(){
   drawStars();
   drawNinja(Math.round(P.x-camX),Math.round(P.y-camY),P.dir,P.state,P.invincible,tick);
   drawPfx();
+  drawCavernTorches();
+  drawBloomFX();
+  drawRain();
+  drawDarknessMask();
   drawVignette();
   drawHUD();
+  if(showHelp)drawHelpOverlay();
 
   ctx.restore();
 }
