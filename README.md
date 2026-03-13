@@ -16,6 +16,7 @@ You infiltrate a hostile facility, dodge hazards, fight enemies, collect mission
 - Extra atmospheric effects (rain layer, polished frame styling)
 - Dynamic underground lighting, bloom glows, and limited-visibility dark zones
 - Basement cavern network with torch-lit side routes and vertical sinkhole link
+- Section-based camera traversal (limited side scroll + full-screen vertical paging)
 - Play instantly in the browser (no install required)
 
 ## How to play

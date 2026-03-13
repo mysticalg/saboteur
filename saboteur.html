@@ -872,11 +872,60 @@ function updatePfx(){
 
 // ── CAMERA ────────────────────────────────────────────────────────────────────
 let camX=0,camY=0;
+// Sectioned camera model: horizontal chunks with limited side-scroll plus
+// full-screen vertical paging to emulate classic Saboteur-style room traversal.
+const SECTION_TILE_W=40;
+const SECTION_COUNT_X=Math.ceil(MW/SECTION_TILE_W);
+const PAGE_H=VH;
+let currentSectionCol=0;
+let currentSectionRow=0;
+
 function updateCamera(){
-  const tx=P.x+PW/2-VW/2,ty=P.y+PH/2-VH/2+10;
-  camX+=(tx-camX)*0.12;camY+=(ty-camY)*0.12;
-  camX=Math.max(0,Math.min(camX,MW*TS-VW));
-  camY=Math.max(0,Math.min(camY,MH*TS-VH));
+  const px=P.x+PW/2,py=P.y+PH/2;
+  const worldW=MW*TS,worldH=MH*TS;
+
+  // Determine which horizontal section and vertical page the player belongs to.
+  const nextCol=Math.max(0,Math.min(SECTION_COUNT_X-1,Math.floor(px/(SECTION_TILE_W*TS))));
+  const maxRow=Math.max(0,Math.floor((worldH-1)/PAGE_H));
+  const nextRow=Math.max(0,Math.min(maxRow,Math.floor(py/PAGE_H)));
+
+  // Snap section/page changes quickly so transitions feel intentional.
+  if(nextCol!==currentSectionCol){currentSectionCol=nextCol;}
+  if(nextRow!==currentSectionRow){currentSectionRow=nextRow;}
+
+  const secLeft=currentSectionCol*SECTION_TILE_W*TS;
+  const secRight=Math.min(worldW,secLeft+SECTION_TILE_W*TS);
+  const secWidth=secRight-secLeft;
+
+  // Center on player but keep camera constrained to the current horizontal section.
+  let tx=px-VW/2;
+  const secMin=secLeft;
+  const secMax=Math.max(secMin,secRight-VW);
+  tx=Math.max(secMin,Math.min(tx,secMax));
+
+  // If section narrower than viewport (edge-case), lock to section start.
+  if(secWidth<=VW)tx=secLeft;
+
+  // Vertical paging is full-screen increments, with slight follow smoothing inside page.
+  const pageTop=currentSectionRow*PAGE_H;
+  const pageBottom=Math.min(worldH,pageTop+PAGE_H);
+  let ty=pageTop;
+  if(pageBottom-pageTop>VH){
+    const inPageFollow=Math.max(pageTop,Math.min(py-VH/2,pageBottom-VH));
+    ty=inPageFollow;
+  }
+
+  camX+=(tx-camX)*0.2;
+  camY+=(ty-camY)*0.24;
+
+  // Fix standing jitter: when near target and player not moving intentionally,
+  // snap camera directly to target to eliminate subpixel shimmer.
+  const still=(!keys['ArrowLeft']&&!keys['ArrowRight']&&Math.abs(P.vx)<0.03&&P.onGround);
+  if(still&&Math.abs(tx-camX)<0.6)camX=tx;
+  if(Math.abs(ty-camY)<0.6)camY=ty;
+
+  camX=Math.max(0,Math.min(camX,worldW-VW));
+  camY=Math.max(0,Math.min(camY,worldH-VH));
 }
 
 // ── TILE DRAWING ──────────────────────────────────────────────────────────────
@@ -1042,7 +1091,7 @@ function drawNinja(sx,sy,dir,state,inv,t){
   ctx.save();ctx.translate(sx+(dir<0?PW:0),sy);if(dir<0)ctx.scale(-1,1);
   // Slower animation sampling so running cycles feel less rushed.
   const fr=t>>4;
-  const runAnimating=state==='run'&&Math.abs(P.vx)>0.08;
+  const runAnimating=state==='run'&&(keys['ArrowLeft']||keys['ArrowRight']);
   // Left/right body lean creates readable momentum and direction changes.
   const lean=runAnimating?Math.max(-2,Math.min(2,P.vx*1.35)):0;
   const bob=runAnimating?((fr%2)?1:0):0;
@@ -1521,6 +1570,9 @@ function drawHUD(){
     ctx.fillText('REACH THE HELICOPTER ON THE ROOF!',132,VH-18);
   }
   ctx.fillStyle='#444';ctx.fillText('FLOOR '+(Math.min(7,Math.floor(P.y/(TS*10))+1)),132,VH-8);
+  // Zone badge clarifies current section/page in room-based traversal mode.
+  const zone='ZONE '+String.fromCharCode(65+currentSectionCol)+'-'+(currentSectionRow+1);
+  ctx.fillStyle='#5d7384';ctx.fillText(zone,176,VH-28);
 
   // Active powerups
   if(P.shield>0){
@@ -1844,6 +1896,8 @@ function initGame(){
   missionTimeout=false;
   skylineOffsetX=0;
   prevCamX=camX;
+  currentSectionCol=0;
+  currentSectionRow=0;
   lastFrameMs=performance.now();
   paused=false;
   showHelp=false;
