@@ -1692,9 +1692,9 @@ function drawBloomFX(){
 
   // Player lantern-like personal glow keeps movement readable in dark regions.
   const px=Math.round(P.x+PW/2-camX),py=Math.round(P.y+PH/2-camY);
-  const pg=ctx.createRadialGradient(px,py,2,px,py,36);
-  pg.addColorStop(0,'rgba(180,220,255,0.18)');pg.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=pg;ctx.fillRect(px-36,py-36,72,72);
+  const pg=ctx.createRadialGradient(px,py,2,px,py,52);
+  pg.addColorStop(0,'rgba(180,220,255,0.26)');pg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=pg;ctx.fillRect(px-52,py-52,104,104);
 
   // Bright projectile effects get tiny bloom halos.
   stars.forEach(st=>{
@@ -1713,32 +1713,60 @@ function drawBloomFX(){
 }
 
 function drawDarknessMask(){
-  // Deep underground: heavily darken the scene and cut light pockets around emitters.
+  // Deep underground: darken scene but preserve playable visibility with FOV cones.
   const undergroundFactor=Math.max(0,Math.min(1,(camY-TS*44)/(TS*18)));
   if(undergroundFactor<=0)return;
 
   ctx.save();
-  const darkness=0.3+undergroundFactor*0.45;
-  ctx.fillStyle=`rgba(0,0,0,${darkness.toFixed(3)})`;
+  // Keep ambient darkness readable; avoid over-black coverage.
+  const darkness=0.18+undergroundFactor*0.28;
+  ctx.fillStyle=`rgba(2,8,18,${darkness.toFixed(3)})`;
   ctx.fillRect(0,0,VW,VH);
+
+  // Add subtle blue cave haze so dark areas are visible, not pure black.
+  const haze=ctx.createLinearGradient(0,0,0,VH);
+  haze.addColorStop(0,'rgba(20,38,70,0.06)');
+  haze.addColorStop(1,'rgba(8,20,44,0.16)');
+  ctx.fillStyle=haze;ctx.fillRect(0,0,VW,VH);
+
   ctx.globalCompositeOperation='destination-out';
 
-  function punchLight(sx,sy,r){
+  function punchLight(sx,sy,r,intensity=0.94){
     const g=ctx.createRadialGradient(sx,sy,1,sx,sy,r);
-    g.addColorStop(0,'rgba(0,0,0,0.94)');
-    g.addColorStop(0.45,'rgba(0,0,0,0.5)');
+    g.addColorStop(0,`rgba(0,0,0,${intensity})`);
+    g.addColorStop(0.55,'rgba(0,0,0,0.45)');
     g.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=g;ctx.fillRect(sx-r,sy-r,r*2,r*2);
   }
 
+  function punchFovCone(sx,sy,dir){
+    // Directional field-of-view cone increases perceived vision range.
+    const len=88;
+    const halfW=42;
+    const tipX=sx+dir*len;
+    ctx.beginPath();
+    ctx.moveTo(sx,sy-6);
+    ctx.lineTo(tipX,sy-halfW);
+    ctx.lineTo(tipX,sy+halfW);
+    ctx.lineTo(sx,sy+6);
+    ctx.closePath();
+    const g=ctx.createLinearGradient(sx,sy,tipX,sy);
+    g.addColorStop(0,'rgba(0,0,0,0.75)');
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;
+    ctx.fill();
+  }
+
+  const px=Math.round(P.x+PW/2-camX),py=Math.round(P.y+PH/2-camY);
   // Player carries strongest local light to keep controls intuitive.
-  punchLight(Math.round(P.x+PW/2-camX),Math.round(P.y+PH/2-camY),56);
+  punchLight(px,py,74,0.98);
+  punchFovCone(px,py,P.dir||1);
 
   // Torches reveal cave corridors and create navigation breadcrumbs.
-  cavernTorches.forEach(ti=>punchLight(Math.round(ti.x*TS+8-camX),Math.round(ti.y*TS+8-camY),34));
+  cavernTorches.forEach(ti=>punchLight(Math.round(ti.x*TS+8-camX),Math.round(ti.y*TS+8-camY),42,0.9));
 
   // Exit pad receives extra illumination once objective is complete.
-  if(P.hasDisk&&P.hasKeycard)punchLight(Math.round(97*TS-camX),Math.round(4*TS-camY),42);
+  if(P.hasDisk&&P.hasKeycard)punchLight(Math.round(97*TS-camX),Math.round(4*TS-camY),52,0.9);
   ctx.restore();
 }
 

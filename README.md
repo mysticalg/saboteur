@@ -15,6 +15,7 @@ You infiltrate a hostile facility, dodge hazards, fight enemies, collect mission
 - Expanded HUD readability (cooldown bar, clearer status indicators)
 - Extra atmospheric effects (rain layer, polished frame styling)
 - Dynamic underground lighting, bloom glows, and limited-visibility dark zones
+- Directional FOV cone + ambient cave haze to prevent over-dark screens
 - Basement cavern network with dark-blue claustrophobic shafts, thick walls, and torch-lit side routes
 - Section-based camera traversal (limited side scroll + full-screen vertical paging)
 - Play instantly in the browser (no install required)
